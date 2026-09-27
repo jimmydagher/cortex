@@ -1,0 +1,41 @@
+#!/bin/sh
+# SDSI release chain (sdsi:versioning) — non-negotiable for every project
+# this is copied into.
+#
+# Overwrites the commit message outright with a single line naming the
+# version — never appended to, never combined with a description. What
+# changed lives in CHANGELOG.md's entry for that version; `git log` is a
+# clean version timeline.
+#
+#   VERSION x.y.z            this commit bumped VERSION (pre-commit ran)
+#   VERSION x.y.z-updated    this commit didn't; x.y.z is the current version
+#
+# Idempotent: overwriting gives the same result on `git commit --amend`.
+#
+# Installed via:  git config core.hooksPath scripts/git
+
+repo_root=$(git rev-parse --show-toplevel)
+msg_file="$1"
+
+# Keep in sync with scripts/git/pre-commit.
+TARGET_BRANCH="main"
+branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+if [ "$branch" != "$TARGET_BRANCH" ]; then
+    exit 0
+fi
+
+if [ -f "$(git rev-parse --git-dir)/MERGE_HEAD" ]; then
+    exit 0
+fi
+
+current_version=$(tr -d '[:space:]' < "$repo_root/VERSION")
+
+if git diff --cached --name-only -- VERSION | grep -qx "VERSION"; then
+    line="VERSION $current_version"
+else
+    line="VERSION $current_version-updated"
+fi
+
+printf '%s\n' "$line" > "$msg_file"
+
+exit 0

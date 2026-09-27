@@ -1,0 +1,4 @@
+# LF everywhere: the release hooks in scripts/git fail to run with Windows line endings (sdsi:versioning).
+* text=auto eol=lf
+*.ico binary
+*.png binary

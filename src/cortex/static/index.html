@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cortex</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/graph.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <!-- Login -->
+  <section id="view-login" class="center-view" hidden>
+    <form id="login-form" class="card narrow">
+      <div class="brand big"><span class="brand-mark"></span>Cortex</div>
+      <p class="muted">Your second brain, served over MCP.</p>
+      <label>Admin password
+        <input id="login-password" type="password" autocomplete="current-password" required autofocus>
+      </label>
+      <button type="submit" class="primary">Sign in</button>
+      <p id="login-error" class="error" hidden></p>
+    </form>
+  </section>
+
+  <!-- Setup -->
+  <section id="view-setup" class="center-view" hidden>
+    <div class="card wide">
+      <div class="brand big"><span class="brand-mark"></span>Set up your brain</div>
+      <p class="muted">Cortex serves the Markdown folder mounted at <code id="setup-dir"></code>. Your brain needs a <code>CORTEX.md</code> routing file; everything else is yours to shape.</p>
+      <div id="setup-found" class="setup-option" hidden>
+        <h3>Use an existing brain</h3>
+        <p class="muted">Found these routing files:</p>
+        <div id="setup-candidates" class="radio-list"></div>
+        <button id="setup-use" class="primary">Use this brain</button>
+      </div>
+      <div class="setup-grid">
+        <div class="setup-option">
+          <h3>Download claude-brain</h3>
+          <p class="muted">Start from the <code id="setup-repo"></code> template on GitHub: routing table, 18 area files, SYNAPSE and ENGRAM. Goes into the brain folder, or a subfolder if it isn't empty.</p>
+          <button id="setup-template">Download template</button>
+        </div>
+        <div class="setup-option">
+          <h3>Start blank</h3>
+          <p class="muted">A minimal CORTEX.md with one area file, plus SYNAPSE and ENGRAM. Nothing existing is overwritten.</p>
+          <button id="setup-blank">Create blank brain</button>
+        </div>
+        <div class="setup-option">
+          <h3>Custom location</h3>
+          <p class="muted">Path to your CORTEX file, relative to the brain folder.</p>
+          <input id="setup-path" placeholder="notes/ai/CORTEX.md">
+          <button id="setup-custom">Use this path</button>
+        </div>
+      </div>
+      <p id="setup-error" class="error" hidden></p>
+      <p id="setup-busy" class="muted" hidden>Working…</p>
+    </div>
+  </section>
+
+  <!-- App -->
+  <section id="view-app" hidden>
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark"></span>Cortex</div>
+      <nav class="tabs" id="tabs">
+        <button data-tab="brain" class="active">Brain</button>
+        <button data-tab="synapse">Synapse <span id="badge-synapse" class="badge" hidden></span></button>
+        <button data-tab="connect">Connect</button>
+        <button data-tab="activity">Activity</button>
+        <button data-tab="settings">Settings</button>
+      </nav>
+      <div class="topbar-right">
+        <button id="power" class="power" title="Turn the brain on or off for every client"><span class="dot"></span><span id="power-label">Brain on</span></button>
+        <button id="logout" class="ghost">Sign out</button>
+      </div>
+    </header>
+
+    <!-- Brain -->
+    <main id="tab-brain" class="tab">
+      <div class="stats" id="stats"></div>
+      <div class="brain-layout">
+        <div class="graph-wrap">
+          <div class="graph-toolbar">
+            <input id="graph-search" type="search" placeholder="Find a note…" list="note-list">
+            <datalist id="note-list"></datalist>
+            <button id="graph-fit" class="ghost small" title="Fit graph to view">Fit</button>
+            <label class="toggle small"><input id="graph-labels" type="checkbox"> Labels</label>
+          </div>
+          <canvas id="graph"></canvas>
+          <div class="legend" id="legend"></div>
+        </div>
+        <aside class="note-panel" id="note-panel">
+          <div id="note-empty" class="empty">
+            <p>Select a note in the graph.</p>
+            <p class="muted small">Drag to pan, scroll to zoom, drag a node to move it.</p>
+          </div>
+          <article id="note" hidden>
+            <div class="note-head">
+              <div>
+                <div class="note-path" id="note-path"></div>
+                <div class="chips" id="note-tags"></div>
+              </div>
+              <button id="note-close" class="ghost small" title="Close">✕</button>
+            </div>
+            <div class="note-body" id="note-body"></div>
+            <div class="note-links">
+              <div><h4>Links to</h4><ul id="note-out"></ul></div>
+              <div><h4>Linked from</h4><ul id="note-in"></ul></div>
+            </div>
+          </article>
+        </aside>
+      </div>
+    </main>
+
+    <!-- Synapse -->
+    <main id="tab-synapse" class="tab page" hidden>
+      <div class="page-head">
+        <h2>Hippocampus</h2>
+        <p class="muted">New knowledge waits in <code id="syn-path"></code> until you decide. <strong>Approve</strong> hands it to your AI to write into memory the next time the brain loads (or say "commit approved synapses"). <strong>Reject</strong> records it in ENGRAM so it isn't proposed again.</p>
+      </div>
+      <h3>Pending review <span class="count" id="count-pending"></span></h3>
+      <div id="list-pending" class="entry-list"></div>
+      <h3>Approved, waiting to be written <span class="count" id="count-approved"></span></h3>
+      <div id="list-approved" class="entry-list"></div>
+      <h3>Recent trail <span class="muted small">from <code id="eng-path"></code></span></h3>
+      <div id="list-trail" class="trail"></div>
+    </main>
+
+    <!-- Connect -->
+    <main id="tab-connect" class="tab page" hidden>
+      <div class="page-head">
+        <h2>Connect a client</h2>
+        <p class="muted">Each client gets its own API key. Keys are stored hashed and shown once; revoke one to cut off that client.</p>
+      </div>
+      <form id="key-form" class="inline-form">
+        <input id="key-label" placeholder="Label, e.g. laptop-claude-code" maxlength="60" required>
+        <button type="submit" class="primary">Create key</button>
+      </form>
+      <div id="key-new" class="callout" hidden>
+        <strong>Copy this key now; it won't be shown again.</strong>
+        <div class="copy-row"><code id="key-raw"></code><button class="small" data-copy="key-raw">Copy</button></div>
+      </div>
+      <table class="table" id="keys-table">
+        <thead><tr><th>Label</th><th>Key</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <h3>Claude Code</h3>
+      <p class="muted">Registers Cortex for every project on this machine.</p>
+      <div class="copy-block"><pre id="snip-cli"></pre><button class="small" data-copy="snip-cli">Copy</button></div>
+      <h3>Project <code>.mcp.json</code></h3>
+      <p class="muted">Reads the key from the <code>CORTEX_API_KEY</code> environment variable, so the file can be committed.</p>
+      <div class="copy-block"><pre id="snip-json"></pre><button class="small" data-copy="snip-json">Copy</button></div>
+      <h3>Claude Desktop</h3>
+      <p class="muted">Through the <code>mcp-remote</code> bridge (needs Node.js), in <code>claude_desktop_config.json</code>.</p>
+      <div class="copy-block"><pre id="snip-desktop"></pre><button class="small" data-copy="snip-desktop">Copy</button></div>
+      <h3>Using it</h3>
+      <ul class="plain">
+        <li><code>use the cortex</code> or the <code>/mcp__cortex__cortex</code> prompt loads the brain for the session.</li>
+        <li><code>review synapse</code>, <code>commit to memory HX0007</code>, <code>reject HX0007</code>, <code>remember: …</code></li>
+        <li><code>turn off the brain</code> / <code>turn on the brain</code> flips the switch for every client until changed.</li>
+      </ul>
+    </main>
+
+    <!-- Activity -->
+    <main id="tab-activity" class="tab page" hidden>
+      <div class="page-head"><h2>Activity</h2><p class="muted">What clients and the GUI did, newest first.</p></div>
+      <table class="table" id="activity-table">
+        <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </main>
+
+    <!-- Settings -->
+    <main id="tab-settings" class="tab page" hidden>
+      <div class="page-head"><h2>Settings</h2><p class="muted">Paths are relative to the brain folder <code id="set-dir"></code>.</p></div>
+      <form id="settings-form" class="form">
+        <label>CORTEX file (routing entry point)<input id="set-cortex" required></label>
+        <label>SYNAPSE file (queue)<input id="set-synapse"></label>
+        <label>ENGRAM file (trail)<input id="set-engram"></label>
+        <label>Protected paths, one per line
+          <textarea id="set-protected" rows="5"></textarea>
+          <span class="hint">A trailing <code>/</code> protects a folder. Protected notes change only through an approved SYNAPSE commit. SYNAPSE and ENGRAM are always protected.</span>
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="primary">Save</button>
+          <button type="button" id="rerun-setup" class="ghost">Run setup again</button>
+        </div>
+        <p id="settings-msg" class="muted" hidden></p>
+      </form>
+    </main>
+  </section>
+
+  <div id="toast" class="toast" hidden></div>
+</body>
+</html>

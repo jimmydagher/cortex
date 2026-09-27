@@ -1,0 +1,38 @@
+# Cortex on the NAS. Put this file and .env (from .env.example) in one folder there, then:
+#   docker compose pull && docker compose up -d
+# Setup from nothing: docs/setup-nas.md. Shipping a new version: docs/deployment.md.
+services:
+  cortex:
+    # The exact image CI built and tested for that VERSION (never rebuilt on the NAS).
+    image: ghcr.io/jimmydagher/cortex:${CORTEX_VERSION:?set CORTEX_VERSION in .env, e.g. 0.1.0}
+    container_name: cortex
+    restart: unless-stopped
+    # Run as the NAS user that owns the folders below (Synology is often 1026:100; `id` shows yours).
+    user: "${PUID:?set PUID in .env}:${PGID:?set PGID in .env}"
+    ports:
+      - "${CORTEX_PORT:?set CORTEX_PORT in .env}:8765"
+    environment:
+      CORTEX_ENV: nas
+      # Read nas.yaml from the mounted config folder instead of the template inside the image.
+      CORTEX_OVERRIDE_DIR: /config
+      TZ: ${TZ:?set TZ in .env, e.g. America/Toronto}
+    volumes:
+      # Data: the brain lives in <data>/brain (your Obsidian vault, or empty for a new brain);
+      # Cortex keeps its runtime state (API key hashes, power switch) in <data>/cortex.
+      - ${CORTEX_DATA_PATH:?set CORTEX_DATA_PATH in .env}:/data
+      # Vault kept elsewhere on the NAS? Also mount it straight onto the brain folder:
+      # - /volume1/obsidian/claude-brain:/data/brain
+      # Config: nas.yaml, your copy of config/override/nas.yaml with the values filled in.
+      - ${CORTEX_CONFIG_PATH:?set CORTEX_CONFIG_PATH in .env}:/config:ro
+      # Logs: cortex.log, plain text, rotated.
+      - ${CORTEX_LOGS_PATH:?set CORTEX_LOGS_PATH in .env}:/logs
+    secrets:
+      - cortex-admin-pwd
+      - cortex-session-key
+
+# Each secret is one file on the NAS, readable only by PUID; Docker mounts it at /run/secrets/<name>.
+secrets:
+  cortex-admin-pwd:
+    file: ${CORTEX_SECRETS_PATH:?set CORTEX_SECRETS_PATH in .env}/cortex-admin-pwd
+  cortex-session-key:
+    file: ${CORTEX_SECRETS_PATH:?set CORTEX_SECRETS_PATH in .env}/cortex-session-key

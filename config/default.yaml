@@ -1,0 +1,79 @@
+# Cortex configuration: every tuneable, one source of truth.
+# Per-environment differences go in override/<env>.yaml and state only what differs.
+# <not configured>  must be set by the environment's override (startup fails otherwise).
+# <set at runtime>  derived by Cortex at load time; anything written here is replaced.
+# Secrets never go here: only their names (see secrets:).
+
+server:
+  host: 0.0.0.0
+  port: 8765
+  # Base URL shown in the GUI's Connect snippets; empty uses the URL of the request.
+  public_url: ""
+  # Host headers Cortex answers to (GUI and /mcp), e.g. ["nas.local", "192.168.1.20"].
+  allowed_hosts: <not configured>
+  # true only when a reverse proxy serves Cortex over HTTPS; marks the session cookie Secure.
+  secure_cookies: <not configured>
+  # Proxies whose X-Forwarded-For/Proto headers are trusted (comma-separated IPs, or "*").
+  forwarded_allow_ips: 127.0.0.1
+
+paths:
+  brain: /data/brain
+  state: /data/cortex
+  logs: /logs
+
+logging:
+  level: INFO
+  file: cortex.log
+  max_bytes: 1000000
+  backups: 5
+  queue_size: 10000
+  # Bounded shutdown drain, kept under Docker's 10 s stop grace period.
+  drain_seconds: 5
+  # Recent activity events kept in memory for the GUI's Activity tab.
+  recent_events: 300
+
+gui:
+  session_days: 30
+  login_window_seconds: 300
+  login_max_failures: 5
+  trail_limit: 25
+  activity_limit: 150
+
+mcp:
+  # Most notes cortex_list returns before asking for a subfolder.
+  list_limit: 300
+
+vault:
+  max_note_bytes: 1000000
+  scan_ttl_seconds: 2
+
+# Where SYNAPSE, ENGRAM and the memory areas sit inside a brain, relative to its CORTEX.md,
+# used when setup can't find them and to seed the protected list.
+layout:
+  synapse: HIPPOCAMPUS/SYNAPSE.md
+  engram: HIPPOCAMPUS/ENGRAM.md
+  memory: MEMORY/
+
+setup:
+  template_repo: jimmydagher/claude-brain
+  download_timeout_seconds: 60
+  max_download_bytes: 50000000
+
+secrets:
+  # Docker secrets are mounted here, one file per secret, named <owner>-<purpose>-<kind>.
+  dir: /run/secrets
+  # Local development only: read CORTEX_ADMIN_PWD / CORTEX_SESSION_KEY from the environment.
+  allow_env_fallback: false
+  admin_password: cortex-admin-pwd
+  session_key: cortex-session-key
+
+state:
+  # Power switch for a brand-new state file.
+  initial_power: "on"
+  # How often an API key's last-used time is written to disk.
+  last_used_flush_seconds: 60
+
+runtime:
+  env: <set at runtime>
+  version: <set at runtime>
+  files: <set at runtime>

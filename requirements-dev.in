@@ -1,0 +1,9 @@
+# What development and CI add: tests, lint, type-check and the vulnerability scan.
+# Edit this, then run `python scripts/python/lock.py` to regenerate requirements-dev.txt.
+-r requirements.in
+mypy>=1.18
+pip-audit>=2.9
+pytest>=9.1.1
+pytest-playwright>=0.7
+ruff>=0.13
+types-pyyaml>=6.0

@@ -1,0 +1,9 @@
+# Template for the NAS deployment (CORTEX_ENV=nas). Copy it into the folder mounted at /config
+# (CORTEX_CONFIG_PATH in .env) as nas.yaml and fill in the values; docs/setup-nas.md walks through it.
+server:
+  # Every name and address you open Cortex with, e.g. ["nas.local", "192.168.1.20"].
+  allowed_hosts: <not configured>
+  # true only when your reverse proxy serves Cortex over HTTPS.
+  secure_cookies: false
+  # The URL clients use, e.g. https://cortex.nas.example; empty uses the request's own URL.
+  public_url: ""

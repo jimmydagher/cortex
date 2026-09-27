@@ -1,0 +1,11 @@
+# The automated test suite (CORTEX_ENV=test). Tests point paths and secrets at a temp folder.
+server:
+  host: 127.0.0.1
+  allowed_hosts: ["testserver", "cortex.local"]
+  secure_cookies: false
+
+vault:
+  scan_ttl_seconds: 0
+
+secrets:
+  allow_env_fallback: false

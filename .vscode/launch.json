@@ -1,0 +1,44 @@
+{
+  // Local run and debug, wired like the container: src/ on the path, CORTEX_ENV plus the two
+  // config folders, secrets as files in ./secrets (config/override/local.yaml).
+  // Uses the interpreter from .venv. Setup: README.md › Run it locally.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Cortex: serve (local)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "cortex",
+      "args": ["serve"],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "CORTEX_ENV": "local",
+        "CORTEX_CONFIG_DIR": "${workspaceFolder}/config",
+        "CORTEX_OVERRIDE_DIR": "${workspaceFolder}/config/override"
+      },
+      "justMyCode": true
+    },
+    {
+      "name": "Cortex: validate-config (local)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "cortex",
+      "args": ["validate-config"],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "CORTEX_ENV": "local",
+        "CORTEX_CONFIG_DIR": "${workspaceFolder}/config",
+        "CORTEX_OVERRIDE_DIR": "${workspaceFolder}/config/override"
+      }
+    },
+    {
+      "name": "Cortex: checks (lint, types, tests)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/python/check.py",
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

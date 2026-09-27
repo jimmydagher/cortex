@@ -1,0 +1,49 @@
+#!/bin/sh
+# SDSI release chain (sdsi:versioning) — non-negotiable for every project
+# this is copied into.
+#
+# Runs scripts/python/release.py, which — in this same commit — bumps
+# VERSION, promotes CHANGELOG.md's "## 🚧 Unreleased" section to the new
+# version, closes every TODO.md item the notes reference ("TODO #<n>"),
+# and stages the result. A docs-only commit folds the notes into the
+# current version instead of bumping. Refused if a code commit has nothing
+# in Unreleased. See release.py's header for the full behavior.
+#
+# Deliberately not a release?  git commit --no-verify
+# Installed via:               git config core.hooksPath scripts/git
+# See scripts/git/commit-msg for the matching commit-message rewrite.
+
+set -e
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+# Feature branches are exempt on purpose — the release belongs to the
+# commit that lands on the target branch, not every WIP commit before it.
+# Keep in sync with scripts/git/commit-msg.
+TARGET_BRANCH="main"
+branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+if [ "$branch" != "$TARGET_BRANCH" ]; then
+    exit 0
+fi
+
+# A merge brings in commits already released on their own branch.
+if [ -f "$(git rev-parse --git-dir)/MERGE_HEAD" ]; then
+    exit 0
+fi
+
+# Probe each candidate by running it: on Windows, "python3" can resolve to
+# a Store placeholder that exists on PATH but doesn't run.
+python_bin=""
+for candidate in python3 python py; do
+    if "$candidate" -c "import sys" >/dev/null 2>&1; then
+        python_bin="$candidate"
+        break
+    fi
+done
+if [ -z "$python_bin" ]; then
+    printf '\n  COMMIT REFUSED — no working python on PATH; the release chain needs Python 3.9+.\n\n' >&2
+    exit 1
+fi
+
+exec "$python_bin" scripts/python/release.py

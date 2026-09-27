@@ -1,0 +1,17 @@
+# Local development on your own machine (CORTEX_ENV=local). Paths are relative to the repo root.
+server:
+  host: 127.0.0.1
+  allowed_hosts: ["localhost", "127.0.0.1"]
+  secure_cookies: false
+
+paths:
+  brain: ./data/brain
+  state: ./data/cortex
+  logs: ./logs
+
+logging:
+  level: DEBUG
+
+secrets:
+  dir: ./secrets
+  allow_env_fallback: true

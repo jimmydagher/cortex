@@ -1,0 +1,17 @@
+# Secrets and local runtime folders (the repo's config/ holds tracked defaults)
+.env
+.env.*
+!.env.example
+secrets/
+data/
+logs/
+
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/

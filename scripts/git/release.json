@@ -1,0 +1,4 @@
+{
+  "docs_patterns": ["README.md", "CHANGELOG.md", "TODO.md", "CLAUDE.md", "docs/*"],
+  "version_files": []
+}
