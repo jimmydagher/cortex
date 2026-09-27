@@ -16,7 +16,21 @@ All notable changes, newest first. See `VERSION` for the current release.
 ### Bug/Issues/Fixes
 (none)
 
-## 🆕VERSION 0.2.0 📅 2026-09-27
+## 🆕VERSION 0.2.1 📅 2026-09-27
+
+### Added or New Features
+(none)
+
+### Removed
+(none)
+
+### Changed
+- `deploy-nas.ps1` says when the version isn't on GHCR yet (CI still running) instead of stopping at Docker's "manifest unknown".
+
+### Bug/Issues/Fixes
+(none)
+
+## 🟧VERSION 0.2.0 📅 2026-09-27
 
 ### Added or New Features
 - Personal layer: `cortex_load` also returns `CEREBELLUM/MAP.md` and the sections it lists under `Always`, and warns about map links that don't resolve.

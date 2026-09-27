@@ -134,7 +134,13 @@ if ($LASTEXITCODE -ne 0 -or -not $endpoint) { throw "Docker context '$Context' n
 $nasHost = if ($endpoint -match '^ssh://(?:[^@]+@)?([^:/]+)') { $Matches[1] } else { "localhost" }
 Write-Host "Deploying Cortex $Version to $nasHost (context '$Context')" -ForegroundColor Green
 
-Invoke-Checked "Pulling $image on the NAS" { docker --context $Context pull --quiet $image }
+Write-Host "==> Pulling $image on the NAS" -ForegroundColor Cyan
+$global:LASTEXITCODE = 0
+docker --context $Context pull --quiet $image
+if ($LASTEXITCODE -ne 0) {
+    # Docker's "manifest unknown" means GHCR has no such tag: CI publishes a version only after its run on main.
+    throw "Couldn't pull $image. If Docker said 'manifest unknown', CI hasn't published $Version yet: wait for the run on main to finish (https://github.com/jimmydagher/cortex/actions), or pass -Version with a published tag."
+}
 
 # ---------- 1. folders ----------
 
