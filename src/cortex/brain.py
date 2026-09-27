@@ -6,11 +6,14 @@ shaping the result. Activity is logged here, once, whichever door the call came 
 """
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any, ClassVar
 
 from . import bootstrap
@@ -29,7 +32,10 @@ from .errors import (
 from .logs import Logger
 from .state import Power, State, now_utc
 from .synapse import Entry, EntryStatus, Hippocampus
-from .vault import Edit, Vault, normalize_path, section
+from .vault import WIKILINK, Edit, Vault, apply_edits, link_heading, link_target, normalize_path, section
+
+ALWAYS_SECTION = "Always"  # the personal map's heading for sections every task loads
+AUDIT_OUTPUT_CHARS = 20_000
 
 
 class JobStatus(StrEnum):
@@ -51,6 +57,24 @@ class NoteChange:
 
 
 @dataclass(frozen=True)
+class HeadingRename:
+    """Rename a heading in a note; every link to it follows."""
+
+    note: str
+    old_heading: str
+    new_heading: str
+
+
+@dataclass(frozen=True)
+class AuditReport:
+    """The result of "check the brain"."""
+
+    source: str  # the brain's own script, or "built-in checks"
+    passed: bool
+    output: str
+
+
+@dataclass(frozen=True)
 class NoteRead:
     """A note (or one section of it) as read for a client."""
 
@@ -62,7 +86,7 @@ class NoteRead:
 
 @dataclass(frozen=True)
 class Overview:
-    """What cortex_load needs: the routing file and the state of the hippocampus."""
+    """What cortex_load needs: the routing file, the personal layer's map and the hippocampus."""
 
     cortex_path: str
     engram_path: str
@@ -70,6 +94,10 @@ class Overview:
     pending: int
     approved: list[Entry]
     text: str
+    personal_map_path: str = ""
+    personal_map: str = ""  # empty when the brain has no personal layer
+    always: list[NoteRead] = field(default_factory=list)  # the map's `Always` sections
+    missing: list[str] = field(default_factory=list)  # map links that don't resolve
 
 
 @dataclass
@@ -92,8 +120,10 @@ class Brain:
         config.paths.brain.mkdir(parents=True, exist_ok=True)
         self.state = State(config.paths.state, config.state, config.layout)
         self.vault = Vault(config.paths.brain, config.vault, logger.warn)
-        self.hippocampus = Hippocampus(self.vault, self.state.get("synapse_path"), self.state.get("engram_path"))
-        self.vault.home = self._home(self.cortex_path)
+        home = self._home(self.cortex_path)
+        self.hippocampus = Hippocampus(self.vault, self.state.get("synapse_path"), self.state.get("engram_path"),
+                                       self._layout_path(config.layout.hippocampus_guide, home))
+        self.vault.home = home
         self._job = SetupJob()
         self._job_lock = threading.Lock()
         if self.configured:
@@ -130,6 +160,11 @@ class Brain:
         parent = str(PurePosixPath(cortex_path).parent) if cortex_path else ""
         return "" if parent == "." else parent
 
+    @staticmethod
+    def _layout_path(value: str, home: str) -> str:
+        """A layout path (config `layout.*`) inside the brain, relative to the folder holding CORTEX.md."""
+        return f"{home}/{value}" if home else value
+
     def _find(self, stem: str, base: str) -> str | None:
         found = [path for path in self.vault.notes() if PurePosixPath(path).stem.upper() == stem and path.startswith(base)]
         return min(found, key=lambda path: (path.count("/"), path)) if found else None
@@ -142,7 +177,9 @@ class Brain:
             cortex_path: the CORTEX.md path inside the brain folder.
             synapse_path: SYNAPSE's path; found near CORTEX.md or from layout.synapse when omitted.
             engram_path: ENGRAM's path; found or from layout.engram when omitted.
-            protected: protected paths; CORTEX.md plus layout.memory (when it exists) when omitted.
+            protected: protected paths; when omitted, CORTEX.md, the memory areas, the personal
+                layer and the HIPPOCAMPUS guide (config `layout`), whether or not they exist yet,
+                so a folder created later is protected from the start.
 
         Raises:
             NotFoundError: there's no file at cortex_path.
@@ -156,14 +193,15 @@ class Brain:
         layout = self.config.layout
         synapse = self.vault.safe_path(synapse_path or self._find("SYNAPSE", base) or base + layout.synapse)[0]
         engram = self.vault.safe_path(engram_path or self._find("ENGRAM", base) or base + layout.engram)[0]
+        guide = self._layout_path(layout.hippocampus_guide, home)
         if protected is None:
-            memory = base + layout.memory
-            protected = [cortex] + ([memory] if (self.config.paths.brain / memory).is_dir() else [])
+            protected = [cortex, base + layout.memory, base + layout.personal, guide]
         self.state.update(
             cortex_path=cortex, synapse_path=synapse, engram_path=engram,
             protected=[normalize_path(path) for path in protected if path.strip()],
         )
         self.hippocampus.synapse_path, self.hippocampus.engram_path = synapse, engram
+        self.hippocampus.guide_path = guide
         self.vault.home = home
         self.vault.invalidate()
         self.hippocampus.ensure_files()
@@ -243,7 +281,10 @@ class Brain:
         }
 
     def overview(self, who: str) -> Overview:
-        """The routing file plus hippocampus counts, for loading the brain.
+        """The routing file, the personal layer's map with its `Always` sections, and hippocampus counts.
+
+        CORTEX asks for the personal map to be read once right after it, so loading returns
+        both in one call. A brain without a personal layer simply has no map.
 
         Args:
             who: the actor, for the activity log.
@@ -253,7 +294,14 @@ class Brain:
         """
         self.require_configured()
         entries = self.hippocampus.entries()
-        self.logger.event(who, "load", self.cortex_path)
+        map_path = self._layout_path(self.config.layout.personal_map, self._home(self.cortex_path))
+        personal_map = ""
+        always: list[NoteRead] = []
+        missing: list[str] = []
+        if self.vault.exists(map_path):
+            personal_map = self.vault.read(map_path)
+            always, missing = self._map_sections(map_path, personal_map, ALWAYS_SECTION)
+        self.logger.event(who, "load", self.cortex_path + (f" + {map_path}" if personal_map else ""))
         return Overview(
             cortex_path=self.cortex_path,
             engram_path=self.hippocampus.engram_path,
@@ -261,7 +309,39 @@ class Brain:
             pending=sum(entry.status == EntryStatus.PENDING for entry in entries),
             approved=[entry for entry in entries if entry.status == EntryStatus.APPROVED],
             text=self.vault.read(self.cortex_path),
+            personal_map_path=map_path if personal_map else "",
+            personal_map=personal_map,
+            always=always,
+            missing=missing,
         )
+
+    def _map_sections(self, map_path: str, map_text: str, area: str) -> tuple[list[NoteRead], list[str]]:
+        """Read the sections a personal map lists under one area heading.
+
+        Args:
+            map_path: the map's vault path (links resolve relative to it).
+            map_text: the map's text.
+            area: the map heading, e.g. `Always` or `CODING`.
+
+        Returns:
+            (sections read, links that don't resolve to a note and heading).
+        """
+        listed = section(map_text, area)
+        if listed is None:
+            return [], []
+        found, missing = [], []
+        for raw in WIKILINK.findall(listed):
+            target, heading = link_target(raw), link_heading(raw)
+            relative = self.vault.resolve(target, map_path) if target else None
+            text = self.vault.read(relative) if relative else None
+            part = section(text, heading) if text is not None and heading else text
+            if relative is None or part is None:
+                missing.append(f"{target}#{heading}" if heading else target)
+                continue
+            note = self.vault.notes().get(relative)
+            label = f"{relative}#{heading}" if heading else relative
+            found.append(NoteRead(label, note.tags if note else [], self.is_protected(relative), part))
+        return found, missing
 
     def read_note(self, who: str, target: str, heading: str = "") -> NoteRead:
         """Read a note by path, name or wikilink target, or one section of it.
@@ -407,40 +487,134 @@ class Brain:
             "next_id": self.hippocampus.next_id(),
         }
 
-    def commit_entry(self, who: str, entry_id: str, changes: list[NoteChange], summary: str,
-                     landed_in: str) -> tuple[Entry, list[str]]:
-        """Write an entry's memory edits and move it to ENGRAM; every edit is validated first.
+    def commit_entry(self, who: str, entry_id: str, changes: list[NoteChange], summary: str, landed_in: str,
+                     renames: list[HeadingRename] | None = None) -> tuple[Entry, list[str]]:
+        """Write an entry's memory edits (and heading renames) and move it to ENGRAM.
+
+        Every change is worked out in memory first; nothing is written unless all of them apply.
 
         Args:
             who: the actor.
             entry_id: the SYNAPSE entry.
-            changes: one item per note to change (protected notes allowed).
+            changes: one item per note to change (protected notes allowed); several items may
+                touch the same note and apply in order.
             summary: one line for the trail.
             landed_in: where it landed; the entry's target when empty.
+            renames: headings to rename, each with every link to it (protected notes allowed).
 
         Returns:
             (committed entry, changed paths).
 
         Raises:
-            InvalidInputError: no changes, or an edit doesn't apply.
-            ForbiddenError: a change targets SYNAPSE or ENGRAM.
+            InvalidInputError: nothing to change, or an edit or rename doesn't apply.
+            ForbiddenError: a change touches SYNAPSE or ENGRAM.
         """
         self.require_configured()
         entry = self.hippocampus.get(entry_id)
-        if not changes:
+        if not changes and not renames:
             raise InvalidInputError("changes is empty: include the memory edit that integrates this entry")
-        prepared = []
+        overlay: dict[str, str] = {}
         for change in changes:
             relative, _ = self.vault.safe_path(change.note)
+            if (change.content is None) == (not change.edits):
+                raise InvalidInputError(f"{relative}: pass either content or edits")
+            if change.content is not None:
+                overlay[relative] = change.content.replace("\r\n", "\n")
+            else:
+                base = overlay[relative] if relative in overlay else self.vault.read(relative)
+                overlay[relative] = apply_edits(base, change.edits, relative)
+        for rename in renames or []:
+            overlay.update(self.vault.rename_heading_plan(rename.note, rename.old_heading, rename.new_heading, overlay))
+        for relative in overlay:
             if self.is_hippocampus(relative):
                 raise ForbiddenError(f"{relative} is managed by the synapse operations and can't be a commit target")
-            prepared.append(self.vault.prepare(relative, change.content, change.edits))
-        for relative, text in prepared:
+        for relative, text in overlay.items():
             self.vault.write_text(relative, text)
         self.hippocampus.commit(entry.id, landed_in, summary)
-        paths = [relative for relative, _ in prepared]
+        paths = list(overlay)
         self.logger.event(who, "commit", f"{entry.id} → {', '.join(paths)}")
         return entry, paths
+
+    def rename_heading(self, who: str, note: str, old_heading: str, new_heading: str) -> list[str]:
+        """Rename a heading in an unprotected note and point every link to it at the new name.
+
+        Args:
+            who: the actor.
+            note: the note holding the heading.
+            old_heading: the current heading text.
+            new_heading: the new heading text.
+
+        Returns:
+            The paths written (the note first, then the notes whose links changed).
+
+        Raises:
+            ForbiddenError: the note, or a note linking to the heading, is protected; rename
+                those headings inside an approved SYNAPSE commit instead.
+        """
+        self.require_configured()
+        plan = self.vault.rename_heading_plan(note, old_heading, new_heading, {})
+        protected = [path for path in plan if self.is_protected(path)]
+        if protected:
+            raise ForbiddenError(f"{', '.join(protected)} {'is' if len(protected) == 1 else 'are'} protected: rename this heading "
+                                 "through a SYNAPSE entry and synapse_commit's renames")
+        for relative, text in plan.items():
+            self.vault.write_text(relative, text)
+        paths = list(plan)
+        self.logger.event(who, "rename heading", f"{paths[0]}#{old_heading} → {new_heading} ({len(paths) - 1} linking notes)")
+        return paths
+
+    # ---------- audit ----------
+
+    def audit(self, who: str) -> AuditReport:
+        """Run "check the brain": the brain's own audit script when it has one, else built-in checks.
+
+        The script is the human's file inside the vault (Cortex only ever writes .md files),
+        run read-only with a timeout, in the folder holding CORTEX.md, without Cortex's
+        environment.
+
+        Args:
+            who: the actor.
+
+        Returns:
+            Which checks ran, whether they passed, and their output.
+        """
+        self.require_configured()
+        home = self._home(self.cortex_path)
+        script_setting = self.config.audit.script.strip()
+        script = (self.config.paths.brain / self._layout_path(script_setting, home)).resolve() if script_setting else None
+        if script and script.is_file() and script.suffix == ".py" and script.is_relative_to(self.config.paths.brain.resolve()):
+            report = self._run_audit_script(script)
+        else:
+            report = self._built_in_audit()
+        self.logger.event(who, "check the brain", f"{report.source}: {'passed' if report.passed else 'problems found'}")
+        return report
+
+    def _run_audit_script(self, script: Path) -> AuditReport:
+        environment = {name: os.environ[name] for name in ("PATH", "SYSTEMROOT", "TZ") if name in os.environ}
+        environment.update(PYTHONIOENCODING="utf-8", PYTHONDONTWRITEBYTECODE="1")
+        relative = script.relative_to(self.config.paths.brain.resolve()).as_posix()
+        try:
+            result = subprocess.run([sys.executable, str(script)], cwd=self.config.paths.brain / self._home(self.cortex_path),
+                                    env=environment,
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                    timeout=self.config.audit.timeout_seconds, check=False)
+        except subprocess.TimeoutExpired:
+            return AuditReport(relative, False, f"timed out after {self.config.audit.timeout_seconds:g} s")
+        except OSError as error:
+            return AuditReport(relative, False, f"couldn't run it: {error.strerror}")
+        output = (result.stdout + result.stderr).strip()
+        return AuditReport(relative, result.returncode == 0, output[:AUDIT_OUTPUT_CHARS] or "(no output)")
+
+    def _built_in_audit(self) -> AuditReport:
+        problems = [f"{dead['source']}: dead {'heading ' if '#' in dead['target'] else ''}link [[{dead['target']}]]"
+                    for dead in self.vault.dead_links()]
+        next_id = self.hippocampus.next_id()
+        declared = self.hippocampus.declared_next_id()
+        if declared and declared != next_id:
+            problems.append(f"{self.hippocampus.synapse_path}: 'Next ID' says {declared} but the next free ID is {next_id}")
+        summary = f"{len(problems)} problems" if problems else "no problems"
+        return AuditReport("built-in checks (dead links, dead heading links, SYNAPSE IDs)", not problems,
+                           "\n".join([*problems, summary]))
 
     def reject_entry(self, who: str, entry_id: str, reason: str) -> Entry:
         """Reject an entry into ENGRAM with the reason.

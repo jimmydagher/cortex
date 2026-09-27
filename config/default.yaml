@@ -47,12 +47,23 @@ vault:
   max_note_bytes: 1000000
   scan_ttl_seconds: 2
 
-# Where SYNAPSE, ENGRAM and the memory areas sit inside a brain, relative to its CORTEX.md,
-# used when setup can't find them and to seed the protected list.
+# Where the brain's parts sit, relative to its CORTEX.md. Used when setup can't find
+# SYNAPSE/ENGRAM, to seed the protected list, and to load the personal layer.
 layout:
   synapse: HIPPOCAMPUS/SYNAPSE.md
   engram: HIPPOCAMPUS/ENGRAM.md
+  # The guide holding SYNAPSE's and ENGRAM's templates, used when either file is missing.
+  hippocampus_guide: HIPPOCAMPUS/HIPPOCAMPUS.md
   memory: MEMORY/
+  # The human-owned personal layer and the map of which sections each area loads.
+  personal: CEREBELLUM/
+  personal_map: CEREBELLUM/MAP.md
+
+# "check the brain": the brain's own read-only audit script, relative to its CORTEX.md
+# (empty uses Cortex's built-in link and ID checks instead).
+audit:
+  script: scripts/check_brain.py
+  timeout_seconds: 60
 
 setup:
   template_repo: jimmydagher/claude-brain

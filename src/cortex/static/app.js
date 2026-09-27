@@ -111,6 +111,7 @@ byId("logout").addEventListener("click", async () => {
 async function refreshStatus() {
   state.status = await api("/api/status");
   const status = state.status;
+  byId("version").textContent = `v${status.version}`;
   byId("power").classList.toggle("off", status.power !== "on");
   byId("power-label").textContent = status.power === "on" ? "Brain on" : "Brain off";
   const waiting = status.pending + status.approved;
@@ -338,6 +339,7 @@ function renderSnippets() {
   byId("snip-cli").textContent = `claude mcp add --transport http --scope user cortex ${url} \\\n  --header "Authorization: Bearer ${key}"`;
   byId("snip-json").textContent = JSON.stringify({ mcpServers: { cortex: { type: "http", url, headers: { Authorization: "Bearer ${CORTEX_API_KEY}" } } } }, null, 2);
   byId("snip-desktop").textContent = JSON.stringify({ mcpServers: { cortex: { command: "npx", args: ["-y", "mcp-remote", url, "--header", "Authorization:${CORTEX_AUTH}"], env: { CORTEX_AUTH: `Bearer ${key}` } } } }, null, 2);
+  byId("snip-claude-ai").textContent = `Name:                   Cortex\nRemote MCP server URL:  ${url}\nRequest header name:    x-auth-token\nRequest header value:   ${key}`;
 }
 
 byId("key-form").addEventListener("submit", async (event) => {

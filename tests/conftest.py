@@ -81,12 +81,88 @@ def brain_dir(tmp_path: Path) -> Path:
         | Code | [[MEMORY/CODING\\|CODING]] |
         | Writing | [[MEMORY/WRITING\\|WRITING]] |
 
+        Personal layer: if `CEREBELLUM/MAP.md` exists, read it once. Rules: [[CEREBELLUM/CEREBELLUM|CEREBELLUM]].
+
         ## Brain Upkeep
-        Queue in [[HIPPOCAMPUS/SYNAPSE|SYNAPSE]]; trail in [[HIPPOCAMPUS/ENGRAM|ENGRAM]].
+        Queue in [[HIPPOCAMPUS/SYNAPSE|SYNAPSE]]; trail in [[HIPPOCAMPUS/ENGRAM|ENGRAM]]; templates in [[HIPPOCAMPUS/HIPPOCAMPUS|HIPPOCAMPUS]].
 
         ```text
         [[NOT/A/LINK]]
         ```
+        """)
+    write(root, "HIPPOCAMPUS/HIPPOCAMPUS.md", """
+        ---
+        tags:
+          - hippocampus
+        ---
+        > Guide: SYNAPSE and ENGRAM are in-transit files.
+
+        ## SYNAPSE.md template
+        ```markdown
+        ---
+        tags:
+          - hippocampus
+        ---
+        > From the guide. Process: [[CORTEX#Brain Upkeep|CORTEX › Brain Upkeep]]
+
+        Next ID: HX0001
+
+        ## Pending
+        <!-- Format: - [ ] HX0001 · YYYY-MM-DD · → MEMORY/FILE › Section or → CEREBELLUM/FILE#Section · change · why · source -->
+        ```
+
+        ## ENGRAM.md template
+        ```markdown
+        ---
+        tags:
+          - hippocampus
+        ---
+        > From the guide: trail, newest first.
+
+        ## Trail
+        ```
+        """)
+    write(root, "CEREBELLUM/CEREBELLUM.md", """
+        ---
+        tags:
+          - memory/personal
+        ---
+        > The human's own layer; loads through `CEREBELLUM/MAP.md`.
+
+        ## Where a lesson goes
+        Another-dev test first.
+        """)
+    write(root, "CEREBELLUM/MAP.md", """
+        ---
+        tags:
+          - memory/personal
+        ---
+        > Which sections to load, by area.
+
+        ## Always
+        - [[CEREBELLUM/PERSONA#Always|PERSONA › Always]]
+
+        ## CODING
+        - [[CEREBELLUM/STYLE#CODING|STYLE › CODING]]
+        """)
+    write(root, "CEREBELLUM/PERSONA.md", """
+        ---
+        tags:
+          - memory/personal
+        ---
+        ## Always
+        - Direct, no small talk.
+        """)
+    write(root, "CEREBELLUM/STYLE.md", """
+        ---
+        tags:
+          - memory/personal
+        ---
+        ## CODING
+        - Log files are plain text, one line per event.
+
+        ## WRITING
+        - Short sentences.
         """)
     write(root, "MEMORY/CODING.md", """
         ---
@@ -114,6 +190,15 @@ def brain_dir(tmp_path: Path) -> Path:
         ---
         ## Now
         Starting. See [[Missing Note]] and ![[diagram.png]].
+        Rules: [[MEMORY/WRITING#Avoid]], [[MEMORY/WRITING#Nope]], and back to [[#Now]].
+        """)
+    write(root, "PROJECTS/Acme/NOTES.md", """
+        ---
+        tags:
+          - project/acme
+        ---
+        Status: [[PROJECTS/Acme/ACME#Now|now]] · [[ACME#Now]] · table | [[ACME#Now\\|here]] |
+        Not a link: `[[ACME#Now]]`
         """)
     write(root, "HIPPOCAMPUS/SYNAPSE.md", """
         ---

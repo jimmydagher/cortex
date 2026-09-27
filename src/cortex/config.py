@@ -89,7 +89,15 @@ class VaultConfig(_Section):
 class LayoutConfig(_Section):
     synapse: str = Field(min_length=1)
     engram: str = Field(min_length=1)
+    hippocampus_guide: str = Field(min_length=1)
     memory: str = Field(min_length=1)
+    personal: str = Field(min_length=1)
+    personal_map: str = Field(min_length=1)
+
+
+class AuditConfig(_Section):
+    script: str
+    timeout_seconds: float = Field(gt=0, le=600)
 
 
 class SetupConfig(_Section):
@@ -126,6 +134,7 @@ class Config(_Section):
     mcp: McpConfig
     vault: VaultConfig
     layout: LayoutConfig
+    audit: AuditConfig
     setup: SetupConfig
     secrets: SecretsConfig
     state: StateConfig

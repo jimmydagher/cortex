@@ -16,7 +16,32 @@ All notable changes, newest first. See `VERSION` for the current release.
 ### Bug/Issues/Fixes
 (none)
 
-## 🆕VERSION 0.1.0 📅 2026-09-26
+## 🆕VERSION 0.2.0 📅 2026-09-27
+
+### Added or New Features
+- Personal layer: `cortex_load` also returns `CEREBELLUM/MAP.md` and the sections it lists under `Always`, and warns about map links that don't resolve.
+- `cortex_check` for "check the brain": runs the brain's own audit script (`audit.script`), or built-in dead-link, dead-heading-link and SYNAPSE ID checks when there is none (TODO #7).
+- `cortex_rename_heading` renames a heading and updates every `[[note#Heading]]` link to it; `synapse_commit` takes `renames` for protected notes, applied in the same commit.
+- Dead heading links (`[[note#Heading]]` to a heading that doesn't exist) show in the GUI's dead-link count and list, matching the brain's audit.
+- claude.ai custom connectors: the `/mcp` gate also accepts the API key in an `x-auth-token` or `x-api-key` request header (claude.ai reserves `Authorization` for its own sign-in), and the Connect tab shows the claude.ai settings.
+- The GUI's top bar shows the running version (from `VERSION`) next to the Cortex name.
+- `scripts/ps1/deploy-nas.ps1`: deploys to the NAS from your PC through the `synology` Docker context (as flammeau does): creates the folders, uploads `config/override/nas.local.yaml`, writes missing secrets over the Docker connection (asks once for the admin password), runs the pre-flight, starts Cortex and checks `/healthz`.
+- `scripts/ps1/run-local.ps1`: runs Cortex on your PC from `.venv`, installing requirements when they change; `-BrainPath` serves any brain folder, `-CheckOnly` stops after `validate-config`.
+
+### Removed
+(none)
+
+### Changed
+- The default protected list adds the personal layer (`CEREBELLUM/`) and the HIPPOCAMPUS guide. Operator: an already set-up Cortex keeps its list; add both in the GUI's Settings.
+- A missing SYNAPSE or ENGRAM is created from the templates in the brain's `HIPPOCAMPUS/HIPPOCAMPUS.md`; the built-in templates are only the fallback.
+- Tool descriptions cover personal SYNAPSE destinations (`CEREBELLUM/FILE#Section`), "remember for me", adding the MAP row in the same commit, and "reload the brain".
+- `docker-compose.yml` mounts the NAS secrets folder read-only at `/run/secrets` instead of using compose `secrets:` (whose file paths a remote Docker context resolves on the PC), and reads its wiring from `.env.nas` (was `.env`; the example is now `.env.nas.example`). Operator: copy `.env.nas.example` to `.env.nas` on your PC.
+- New config keys with defaults in `config/default.yaml`: `layout.hippocampus_guide`, `layout.personal`, `layout.personal_map`, `audit.script`, `audit.timeout_seconds`; nothing to set.
+
+### Bug/Issues/Fixes
+(none)
+
+## 🟥VERSION 0.1.0 📅 2026-09-26
 
 ### Added or New Features
 - Cortex: an MCP server at `/mcp` (per-client API keys, 10 tools, 2 prompts) and a web GUI (graph view, note reader, SYNAPSE review, keys, activity, settings, first-run setup) serving a Markdown brain routed by `CORTEX.md`.

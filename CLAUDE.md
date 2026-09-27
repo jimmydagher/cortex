@@ -26,6 +26,8 @@ One asyncio event loop (uvicorn/Starlette). Blocking work never runs on it: GUI 
 - Logs: plain text through `logs.Logger` only (`event`, `access`, `warn`); files in `paths.logs`, never JSON, never in config or data folders.
 - `favicon.ico` is generated from the shapes in `scripts/python/make_favicon.py` (kept in step with `favicon.svg`); never edit the `.ico`.
 - `scripts/python/release.py` and `scripts/git/*` are copied unchanged from the SDSI plugin; update them by recopying.
+- Follow the brain, don't hardcode it: SYNAPSE/ENGRAM templates come from the brain's HIPPOCAMPUS guide, "check the brain" runs the brain's own audit script, and layout paths are config (`layout.*`). Built-in copies are fallbacks only.
+- The personal layer (`CEREBELLUM/`) is human-owned: protected by default and changed only through `synapse_commit`.
 - Local checks before calling anything done: `python scripts/python/check.py` (ruff, mypy strict, pytest; the tools' settings live in that script).
 - No TOML or extra config files: app settings only in `config/*.yaml`, packages only in `requirements*.in` → `requirements*.txt` (regenerate with `scripts/python/lock.py`). Cortex isn't installed as a package: `src/` goes on `PYTHONPATH` and it runs as `python -m cortex`.
 
@@ -39,5 +41,6 @@ One asyncio event loop (uvicorn/Starlette). Blocking work never runs on it: GUI 
 | A GUI API route | `web.py` → `app.js` → request-level test in `tests/test_app.py` |
 | A command or exit code | `commands.py` / `errors.ExitCode` → `docs/cheat-sheet.md` → `.vscode/launch.json` |
 | A dependency | `requirements.in` or `requirements-dev.in` → `python scripts/python/lock.py` → commit both `.txt` files |
-| A volume or env wiring | `Dockerfile` → `docker-compose.yml` → `.env.example` → `docs/setup-nas.md` |
+| A volume or env wiring | `Dockerfile` → `docker-compose.yml` → `.env.nas.example` → `scripts/ps1/deploy-nas.ps1` → `docs/setup-nas.md` |
+| How Cortex runs locally | `scripts/ps1/run-local.ps1` → `.vscode/launch.json` → README › Run it locally |
 | Anything user- or operator-visible | a bullet in `CHANGELOG.md` › 🚧 Unreleased |

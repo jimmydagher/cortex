@@ -18,7 +18,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .config import VaultConfig
-from .errors import InvalidInputError, NotFoundError
+from .errors import ConflictError, InvalidInputError, NotFoundError
 
 WIKILINK = re.compile(r"!?\[\[([^\[\]\n]+?)\]\]")
 MARKDOWN_LINK = re.compile(r"\[[^\]\n]*\]\(([^)\s]+?\.md)(?:#[^)]*)?\)")
@@ -34,14 +34,26 @@ SEARCH_LINE_CHARS = 240
 
 
 @dataclass
+class Parsed:
+    """What a note's text says about its place in the graph."""
+
+    tags: list[str]
+    links: list[str]
+    anchors: list[tuple[str, str]]  # (target, heading) for [[target#Heading]]; "" targets the note itself
+    headings: set[str]  # lowercased heading texts
+
+
+@dataclass
 class Note:
-    """One indexed note: where it is, when it changed, its tags and outgoing link targets."""
+    """One indexed note: where it is, when it changed, its tags, links and headings."""
 
     path: str
     modified: float
     size: int
     tags: list[str] = field(default_factory=list)
     links: list[str] = field(default_factory=list)
+    anchors: list[tuple[str, str]] = field(default_factory=list)
+    headings: set[str] = field(default_factory=set)
 
     @property
     def name(self) -> str:
@@ -150,27 +162,76 @@ def link_target(raw: str) -> str:
     return raw.split("|", 1)[0].rstrip("\\").split("#", 1)[0].strip()
 
 
-def parse_note(text: str) -> tuple[list[str], list[str]]:
-    """Find a note's tags and link targets, ignoring anything inside code.
+def link_heading(raw: str) -> str:
+    """The heading a wikilink points at.
+
+    Args:
+        raw: the text inside `[[...]]`, e.g. `CEREBELLUM/STYLE#CODING|STYLE › CODING`.
+
+    Returns:
+        The heading (`CODING`), or "" when there is none or it's a block reference (`#^id`).
+    """
+    heading = raw.split("|", 1)[0].rstrip("\\").partition("#")[2].strip()
+    return "" if heading.startswith("^") else heading
+
+
+def text_lines(text: str) -> Iterator[tuple[int, str, bool]]:
+    """Every line of a whole note with whether links there are live (not frontmatter or code).
+
+    Args:
+        text: the whole note, LF line endings.
+
+    Yields:
+        (index, line, skip): skip is True inside the frontmatter and in fenced code.
+    """
+    lines = text.split("\n")
+    _, body = split_frontmatter(text)
+    body_start = text[: len(text) - len(body)].count("\n")  # lines taken by the frontmatter, 0 without one
+    for index in range(body_start):
+        yield index, lines[index], True
+    for offset, (line, in_code) in enumerate(scan_lines("\n".join(lines[body_start:]))):
+        yield body_start + offset, line, in_code
+
+
+def parse_note(text: str) -> Parsed:
+    """Find a note's tags, links and headings, ignoring anything inside code.
 
     Args:
         text: the whole note.
 
     Returns:
-        (tags, link targets), each deduplicated in order of appearance.
+        Tags and link targets deduplicated in order of appearance, heading links, headings.
     """
     front, body = split_frontmatter(text)
     tags = frontmatter_tags(front)
     links: list[str] = []
+    anchors: list[tuple[str, str]] = []
+    headings: set[str] = set()
     for line, in_code in scan_lines(body):
         if in_code:
             continue
+        heading = HEADING.match(line)
+        if heading:
+            headings.add(heading.group(2).strip().lower())
         line = INLINE_CODE.sub("", line)
-        links += [target for raw in WIKILINK.findall(line) if (target := link_target(raw))]
+        for raw in WIKILINK.findall(line):
+            target, anchor = link_target(raw), link_heading(raw)
+            if target:
+                links.append(target)
+            if anchor:
+                anchors.append((target, anchor))
         links += [target for target in MARKDOWN_LINK.findall(line) if "://" not in target]
         if not line.lstrip().startswith("#"):
             tags += INLINE_TAG.findall(line)
-    return list(dict.fromkeys(tags)), list(dict.fromkeys(links))
+    return Parsed(list(dict.fromkeys(tags)), list(dict.fromkeys(links)), list(dict.fromkeys(anchors)), headings)
+
+
+def _relink(raw: str, new_heading: str) -> str:
+    """Rewrite a wikilink's heading, keeping its path, alias and table-escaped pipe."""
+    head, separator, alias = raw.partition("|")
+    escaped = head.endswith("\\")
+    path = (head[:-1] if escaped else head).partition("#")[0]
+    return f"{path}#{new_heading}" + ("\\" if escaped else "") + separator + alias
 
 
 def section(text: str, heading: str) -> str | None:
@@ -287,7 +348,8 @@ class Vault:
             self._warn(f"{relative} is over vault.max_note_bytes; indexed without tags or links")
         else:
             try:
-                note.tags, note.links = parse_note(full.read_text(encoding="utf-8", errors="replace"))
+                parsed = parse_note(full.read_text(encoding="utf-8", errors="replace"))
+                note.tags, note.links, note.anchors, note.headings = parsed.tags, parsed.links, parsed.anchors, parsed.headings
             except OSError as error:
                 self._warn(f"{relative} couldn't be read ({error.strerror}); indexed without tags or links")
         found[relative] = note
@@ -522,7 +584,7 @@ class Vault:
         """
         notes = self.notes()
         groups = self.color_groups()
-        nodes, links, dead = [], [], []
+        nodes, links = [], []
         for relative, note in sorted(notes.items()):
             nodes.append({"id": relative, "label": note.name, "tags": note.tags, "color": self._color(relative, note, groups)})
             seen = set()
@@ -531,16 +593,32 @@ class Vault:
                 if resolved and resolved != relative and resolved not in seen:
                     seen.add(resolved)
                     links.append({"source": relative, "target": resolved})
-                elif not resolved and not self.is_attachment(target):
-                    dead.append({"source": relative, "target": target})
         linked = {end for link in links for end in (link["source"], link["target"])}
         return {
             "nodes": nodes,
             "links": links,
-            "dead": dead,
+            "dead": self.dead_links(),
             "orphans": [node["id"] for node in nodes if node["id"] not in linked],
             "groups": groups,
         }
+
+    def dead_links(self) -> list[dict[str, str]]:
+        """Links to notes that don't exist, and `[[note#Heading]]` links to headings that don't.
+
+        Returns:
+            One {source, target} per dead link; a dead heading link's target is `note#Heading`.
+        """
+        notes = self.notes()
+        dead = []
+        for relative, note in sorted(notes.items()):
+            for target in note.links:
+                if not self.resolve(target, relative) and not self.is_attachment(target):
+                    dead.append({"source": relative, "target": target})
+            for target, heading in note.anchors:
+                resolved = self.resolve(target, relative) if target else relative
+                if resolved and heading.lower() not in notes[resolved].headings:
+                    dead.append({"source": relative, "target": f"{target}#{heading}"})
+        return dead
 
     def outgoing(self, relative: str) -> list[str]:
         """Notes a note links to.
@@ -568,3 +646,73 @@ class Vault:
             source for source, note in self.notes().items()
             if source != relative and any(self.resolve(target, source) == relative for target in note.links)
         )
+
+    def rename_heading_plan(self, relative: str, old: str, new: str, overlay: dict[str, str]) -> dict[str, str]:
+        """Work out the texts that rename a heading and point every link to it at the new name.
+
+        Nothing is written: the caller decides whether the change is allowed and writes it.
+
+        Args:
+            relative: the note holding the heading.
+            old: the current heading text (case-insensitive).
+            new: the new heading text.
+            overlay: texts already changed in this operation, by path, used instead of the disk.
+
+        Returns:
+            New text by vault path: the note itself plus every note whose links changed.
+
+        Raises:
+            NotFoundError: no such note, or no such heading in it.
+            InvalidInputError: the heading appears more than once, or the new name is empty.
+            ConflictError: the note already has a heading with the new name.
+        """
+        relative, _ = self.safe_path(relative)
+        new = " ".join(new.split())
+        if not new or "#" in new or "|" in new or "]" in new:
+            raise InvalidInputError("the new heading must be non-empty and can't contain # | or ]")
+        text = overlay.get(relative)
+        if text is None:
+            text = self.read(relative)
+        lines = text.split("\n")
+        matches = [(index, HEADING.match(line)) for index, line, skip in text_lines(text) if not skip and HEADING.match(line)]
+        found = [(index, match) for index, match in matches if match and match.group(2).strip().lower() == old.strip().lower()]
+        if not found:
+            raise NotFoundError(f"{relative} has no heading '{old}'")
+        if len(found) > 1:
+            raise InvalidInputError(f"{relative} has {len(found)} headings named '{old}'; rename it in the editor")
+        if any(match and match.group(2).strip().lower() == new.lower() for _, match in matches):
+            raise ConflictError(f"{relative} already has a heading '{new}'")
+        index, match = found[0]
+        lines[index] = f"{match.group(1)} {new}"
+        changed = {relative: "\n".join(lines)}
+
+        wanted = old.strip().lower()
+        for source in sorted(set(self.notes()) | set(overlay)):
+            source_text = changed.get(source) or overlay.get(source)
+            if source_text is None:
+                try:
+                    source_text = self.read(source)
+                except (NotFoundError, InvalidInputError):
+                    continue
+            source_lines = source_text.split("\n")
+            touched = False
+            for line_index, line, skip in text_lines(source_text):
+                if skip or "[[" not in line:
+                    continue
+                parts = re.split(r"(`[^`\n]*`)", line)
+                for part_index in range(0, len(parts), 2):
+                    def relink(link: re.Match[str], source: str = source) -> str:
+                        raw = link.group(1)
+                        target = link_target(raw)
+                        points_here = (self.resolve(target, source) if target else source) == relative
+                        if points_here and link_heading(raw).lower() == wanted:
+                            return link.group(0).replace(raw, _relink(raw, new), 1)
+                        return link.group(0)
+                    parts[part_index] = WIKILINK.sub(relink, parts[part_index])
+                rewritten = "".join(parts)
+                if rewritten != line:
+                    source_lines[line_index] = rewritten
+                    touched = True
+            if touched:
+                changed[source] = "\n".join(source_lines)
+        return changed

@@ -76,6 +76,22 @@ def test_mcp_requires_valid_key(client: TestClient) -> None:
     assert rpc(client, "ctx_wrong", "tools/list").status_code == 401
 
 
+def raw_rpc(client: TestClient, headers: dict[str, str]) -> httpx2.Response:
+    body = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+    return client.post("/mcp", headers={**MCP_HEADERS, **headers}, content=json.dumps(body))
+
+
+def test_key_in_claude_ai_request_headers_is_accepted(client: TestClient) -> None:
+    # claude.ai's connector dialog reserves Authorization for its own sign-in; the key comes in x-auth-token or x-api-key.
+    key = new_key(client, "claude-ai")
+    assert raw_rpc(client, {"x-auth-token": key}).status_code == 200
+    assert raw_rpc(client, {"X-API-Key": f"Bearer {key}"}).status_code == 200
+    # Its own OAuth token in Authorization doesn't hide a valid key in x-auth-token.
+    assert raw_rpc(client, {"Authorization": "Bearer oauth-token-from-claude", "x-auth-token": key}).status_code == 200
+    refused = raw_rpc(client, {"x-auth-token": "ctx_wrong"})
+    assert refused.status_code == 401 and "x-auth-token" in error_of(refused)["message"]
+
+
 def test_revoked_key_is_refused(client: TestClient) -> None:
     key = new_key(client)
     key_id = client.get("/api/keys").json()["keys"][0]["id"]
@@ -176,7 +192,10 @@ def test_gui_requires_login_and_csrf(client: TestClient) -> None:
     assert response.status_code == 401 and error_of(response)["code"] == "unauthorized"
     assert client.post("/api/login", json={"password": "nope"}).status_code == 401
     login(client)
-    assert client.get("/api/status").json()["configured"] is True
+    status = client.get("/api/status").json()
+    assert status["configured"] is True
+    # The top bar shows the running release, read from VERSION.
+    assert status["version"] == (Path(__file__).resolve().parents[1] / "VERSION").read_text(encoding="utf-8").strip()
     assert client.post("/api/power", json={"state": "off"}).status_code == 403
     assert client.post("/api/power", json={"state": "off"}, headers=CSRF).json()["power"] == "off"
 
@@ -300,7 +319,7 @@ def test_setup_blank_brain(tmp_path: Path, brain_dir: Path, logger: Logger, erro
         assert job.status_code == 200 and job.json()["status"] == "succeeded"
         status = client.get("/api/status").json()
         assert status["configured"] and status["cortex_path"] == "CORTEX.md"
-        assert status["protected"] == ["CORTEX.md", "MEMORY/"]
+        assert status["protected"] == ["CORTEX.md", "MEMORY/", "CEREBELLUM/", "HIPPOCAMPUS/HIPPOCAMPUS.md"]
         graph = client.get("/api/graph").json()
         assert {node["id"] for node in graph["nodes"]} == {"CORTEX.md", "MEMORY/GENERAL.md", "HIPPOCAMPUS/SYNAPSE.md", "HIPPOCAMPUS/ENGRAM.md"}
         assert graph["dead"] == []
@@ -342,8 +361,10 @@ def test_brain_in_subfolder(tmp_path: Path, brain_dir: Path, logger: Logger, err
     brain = app.state.brain
     brain.configure("claude-brain/CORTEX.md")
     assert brain.hippocampus.synapse_path == "claude-brain/HIPPOCAMPUS/SYNAPSE.md"
-    assert brain.state.get("protected") == ["claude-brain/CORTEX.md", "claude-brain/MEMORY/"]
+    assert brain.state.get("protected") == ["claude-brain/CORTEX.md", "claude-brain/MEMORY/", "claude-brain/CEREBELLUM/",
+                                            "claude-brain/HIPPOCAMPUS/HIPPOCAMPUS.md"]
     assert brain.is_protected("claude-brain/MEMORY/CODING.md") and not brain.is_protected("claude-brain/PROJECTS/Acme/ACME.md")
+    assert brain.is_protected("claude-brain/CEREBELLUM/STYLE.md")
     graph = brain.vault.graph()
     assert {"source": "claude-brain/CORTEX.md", "target": "claude-brain/MEMORY/CODING.md"} in graph["links"]
     assert next(node for node in graph["nodes"] if node["id"] == "claude-brain/CORTEX.md")["color"] == "#2a78d6"
@@ -370,3 +391,89 @@ def test_activity_log_is_plain_text_with_request_ids(client: TestClient, logger:
         assert reloaded.recent(1)[0]["who"] == "nas-laptop"
     finally:
         reloaded.close()
+
+
+# ---------- the live brain's layout: personal layer, guide, heading links, audit ----------
+
+
+def test_load_includes_personal_map_and_always_sections(client: TestClient) -> None:
+    # CORTEX rule 5: read CEREBELLUM/MAP.md once after CORTEX and load its Always sections.
+    key = new_key(client)
+    failed, text = call(client, key, "cortex_load")
+    assert not failed
+    assert "--- CEREBELLUM/MAP.md ---" in text and "Personal layer:" in text
+    assert "--- CEREBELLUM/PERSONA.md#Always (Always) ---" in text and "Direct, no small talk." in text
+    assert "Log files are plain text" not in text  # the CODING section loads only for coding tasks
+
+
+def test_personal_layer_and_guide_are_protected(client: TestClient) -> None:
+    # Regression: CEREBELLUM is human-owned and changes only through an approved commit.
+    key = new_key(client)
+    for note in ("CEREBELLUM/STYLE.md", "CEREBELLUM/NEW.md", "HIPPOCAMPUS/HIPPOCAMPUS.md"):
+        failed, text = call(client, key, "cortex_write", note=note, content="x")
+        assert failed and "protected" in text, note
+
+
+def test_missing_synapse_is_created_from_the_brains_guide(config: Config, brain_dir: Path, logger: Logger,
+                                                         errors: ErrorHandler) -> None:
+    # SYNAPSE/ENGRAM are in-transit files a fresh clone doesn't have; the brain's guide holds their templates.
+    (brain_dir / "HIPPOCAMPUS/SYNAPSE.md").unlink()
+    (brain_dir / "HIPPOCAMPUS/ENGRAM.md").unlink()
+    with build(config, logger, errors):
+        synapse = (brain_dir / "HIPPOCAMPUS/SYNAPSE.md").read_text(encoding="utf-8")
+        assert "From the guide. Process: [[CORTEX#Brain Upkeep" in synapse and "Next ID: HX0001" in synapse
+        assert "From the guide: trail" in (brain_dir / "HIPPOCAMPUS/ENGRAM.md").read_text(encoding="utf-8")
+
+
+def test_commit_to_personal_layer_with_map_row_and_heading_rename(client: TestClient, brain_dir: Path) -> None:
+    key = new_key(client)
+    failed, text = call(client, key, "synapse_queue", target="CEREBELLUM/ENVIRONMENT#CODING", change="Windows 11, PowerShell",
+                        why="machine facts", source="preference")
+    assert text == "Queued HX0002 → CEREBELLUM/ENVIRONMENT#CODING"
+    new_row = "- [[CEREBELLUM/STYLE#CODING|STYLE › CODING]]\n- [[CEREBELLUM/ENVIRONMENT#CODING|ENVIRONMENT › CODING]]"
+    failed, text = call(client, key, "synapse_commit", id="HX0002", summary="machine facts", changes=[
+        {"note": "CEREBELLUM/ENVIRONMENT.md", "content": "---\ntags:\n  - memory/personal\n---\n## CODING\n- Windows 11, PowerShell.\n"},
+        {"note": "CEREBELLUM/MAP.md", "edits": [{"old_text": "- [[CEREBELLUM/STYLE#CODING|STYLE › CODING]]", "new_text": new_row}]},
+    ], renames=[{"note": "CEREBELLUM/STYLE.md", "old_heading": "CODING", "new_heading": "CODE"}])
+    assert not failed, text
+    map_text = (brain_dir / "CEREBELLUM/MAP.md").read_text(encoding="utf-8")
+    assert "[[CEREBELLUM/STYLE#CODE|STYLE › CODING]]" in map_text and "[[CEREBELLUM/ENVIRONMENT#CODING|" in map_text
+    assert "## CODE" in (brain_dir / "CEREBELLUM/STYLE.md").read_text(encoding="utf-8")
+    assert "landed in CEREBELLUM/ENVIRONMENT#CODING" in (brain_dir / "HIPPOCAMPUS/ENGRAM.md").read_text(encoding="utf-8")
+
+
+def test_rename_heading_tool(client: TestClient, brain_dir: Path) -> None:
+    key = new_key(client)
+    failed, text = call(client, key, "cortex_rename_heading", note="PROJECTS/Acme/ACME.md", old_heading="Now", new_heading="Status")
+    assert not failed and "updated links in PROJECTS/Acme/NOTES.md" in text
+    assert "[[ACME#Status]]" in (brain_dir / "PROJECTS/Acme/NOTES.md").read_text(encoding="utf-8")
+    failed, text = call(client, key, "cortex_rename_heading", note="CEREBELLUM/STYLE.md", old_heading="CODING", new_heading="CODE")
+    assert failed and "protected" in text and "renames" in text
+    assert "## CODING" in (brain_dir / "CEREBELLUM/STYLE.md").read_text(encoding="utf-8")
+
+
+def test_check_runs_the_brains_own_audit_script(client: TestClient, brain_dir: Path) -> None:
+    key = new_key(client)
+    script = brain_dir / "scripts" / "check_brain.py"
+    script.parent.mkdir()
+    script.write_text("import os\nprint('0 errors, 0 warnings', 'secret-env' if 'CORTEX_ADMIN_PWD' in os.environ else 'clean-env')\n",
+                      encoding="utf-8")
+    failed, text = call(client, key, "cortex_check")
+    assert not failed and text.startswith("Passed · scripts/check_brain.py") and "0 errors, 0 warnings clean-env" in text
+    script.write_text("import sys\nprint('CORTEX.md:3: dead link [[X]]')\nsys.exit(1)\n", encoding="utf-8")
+    failed, text = call(client, key, "cortex_check")
+    assert text.startswith("Problems found · scripts/check_brain.py") and "dead link [[X]]" in text
+
+
+def test_check_falls_back_to_built_in_checks(client: TestClient) -> None:
+    key = new_key(client)
+    failed, text = call(client, key, "cortex_check")
+    assert text.startswith("Problems found · built-in checks")
+    assert "PROJECTS/Acme/ACME.md: dead link [[Missing Note]]" in text
+    assert "PROJECTS/Acme/ACME.md: dead heading link [[MEMORY/WRITING#Nope]]" in text
+
+
+def test_graph_lists_dead_heading_links(client: TestClient) -> None:
+    login(client)
+    dead = client.get("/api/graph").json()["dead"]
+    assert {"source": "PROJECTS/Acme/ACME.md", "target": "MEMORY/WRITING#Nope"} in dead

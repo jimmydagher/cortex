@@ -1,86 +1,66 @@
 # Set up Cortex on a NAS
 
-From nothing to a running Cortex that Claude can reach. Paths use a Synology-style `/volume1/docker/cortex`; use any folder you like and keep `.env` in step.
+From nothing to a running Cortex that Claude can reach, driven entirely from your PC. The process mirrors flammeau's: the `synology` Docker context runs everything on the NAS over SSH, so nothing is copied up by hand. The difference is that Cortex isn't built on the NAS; it pulls the image CI built for the version.
 
 ## 1. Before you start
 
-- Docker with the compose plugin on the NAS.
-- The image published for the version you want: CI pushes `ghcr.io/jimmydagher/cortex:<VERSION>` when a release lands on `main` (see [deployment.md](deployment.md)). If the GitHub package is private, log the NAS in once with a token that has `read:packages`:
+- The `synology` Docker context and its SSH key, the same one flammeau and life-dashboard use (one-time setup in `life-dashboard/NAS.md`). Check it:
 
-  ```bash
-  # NAS shell
-  echo "<token>" | docker login ghcr.io -u jimmydagher --password-stdin
+  ```powershell
+  # dev machine, PowerShell
+  docker context ls          # a "synology" row pointing at ssh://<you>@<nas>
   ```
 
-- The user and group that should own Cortex's files. `id <user>` shows the numbers (Synology users are often `1026:100`).
+- PowerShell 7 (`pwsh`), which the scripts need.
+- The image published for the version you deploy: CI pushes `ghcr.io/jimmydagher/cortex:<VERSION>` when a release lands on `main` ([deployment.md](deployment.md)). It's public, so the NAS pulls it without logging in.
 
-## 2. Folders
+## 2. `.env.nas`, the one-time local file
 
-```bash
-# NAS shell
-mkdir -p /volume1/docker/cortex/{data/brain,config,logs,secrets}
-chown -R 1026:100 /volume1/docker/cortex
+```powershell
+# dev machine, PowerShell, repo root
+Copy-Item .env.nas.example .env.nas
 ```
 
-Put your vault in `data/brain`, or leave it empty for the setup wizard. If the vault already lives somewhere else (for example synced by Obsidian), keep it there and uncomment the extra `/data/brain` volume line in `docker-compose.yml`.
+Check its values: the four NAS folders (default `/volume1/docker/cortex/...`), `PUID`/`PGID` (the user Cortex runs as, default `1000:1000`), `CORTEX_PORT` and `TZ`. `.env.nas` is gitignored and never leaves your PC: Compose reads it locally. It holds no secrets.
 
-## 3. Secrets
+To serve a vault that already lives elsewhere on the NAS (for example one Obsidian syncs), uncomment the extra `/data/brain` volume line in `docker-compose.yml` and point it at that folder; it must be writable by `PUID`. Otherwise the brain is `<CORTEX_DATA_PATH>/brain`, and the setup wizard fills it.
 
-Two files, one value each, readable only by the Cortex user. Docker mounts them at `/run/secrets/<name>`.
+## 3. Deploy
 
-```bash
-# NAS shell
-cd /volume1/docker/cortex/secrets
-printf '%s' 'a long admin password' > cortex-admin-pwd
-openssl rand -base64 48 | tr -d '\n' > cortex-session-key
-chmod 600 cortex-admin-pwd cortex-session-key
-chown 1026:100 cortex-admin-pwd cortex-session-key
+```powershell
+# dev machine, PowerShell, repo root
+.\scripts\ps1\deploy-nas.ps1
 ```
 
-`cortex-admin-pwd` signs you into the GUI. `cortex-session-key` signs GUI session cookies; changing either signs everyone out.
+Every run does the same safe steps, in order:
 
-## 4. Config override
+1. **Pulls** `ghcr.io/jimmydagher/cortex:<VERSION>` on the NAS (`-Version` picks another tag).
+2. **Creates the NAS folders** from `.env.nas` and gives Cortex's own (state, config, logs, secrets) to `PUID:PGID`. An existing brain folder's ownership is left alone.
+3. **Uploads the config override.** The first run creates `config/override/nas.local.yaml` (gitignored) from the `nas.yaml` template, with the NAS's address as `server.allowed_hosts`. Edit it later for more host names or HTTPS; every deploy uploads it as the NAS's `/config/nas.yaml`.
+4. **Writes missing secrets** on the NAS. The first run asks for the GUI admin password (twice) and generates the session key. Values go to the NAS over the SSH-tunneled Docker connection and are never saved on your PC.
+5. **Pre-flight:** runs `validate-config` with the real container wiring and stops on any problem. `-PreflightOnly` stops here without starting anything.
+6. **Starts Cortex** and waits until `http://<nas>:<CORTEX_PORT>/healthz` answers.
 
-Copy [config/override/nas.yaml](../config/override/nas.yaml) from the repo to `/volume1/docker/cortex/config/nas.yaml` and fill it in:
-
-```yaml
-server:
-  allowed_hosts: ["nas.local", "192.168.1.20"]   # every name and address you'll open Cortex with
-  secure_cookies: false                          # true behind an HTTPS reverse proxy
-  public_url: ""                                 # e.g. https://cortex.example.com behind a proxy
-```
-
-Anything else in [config/default.yaml](../config/default.yaml) can be overridden here too; state only what differs.
-
-## 5. Compose
-
-Copy `docker-compose.yml` and `.env.example` into one folder on the NAS (for example `/volume1/docker/cortex`), rename `.env.example` to `.env`, and fill in `CORTEX_VERSION`, the four paths, `PUID`/`PGID`, `CORTEX_PORT` and `TZ`.
-
-## 6. Pre-flight, then start
-
-```bash
-# NAS shell, in the folder with docker-compose.yml
-docker compose pull
-docker compose run --rm cortex validate-config   # checks config, secrets and folders; changes nothing
-docker compose up -d
-docker compose logs -f cortex                    # "[server] start" lines, then access lines
-```
-
-`validate-config` prints `OK configuration, secrets and folders are ready` and exits 0, or lists every problem and exits 3.
-
-## 7. First run
+## 4. First run
 
 Open `http://<nas>:8765`, sign in with the admin password, and pick a setup option: use an existing `CORTEX.md`, download the claude-brain template, start blank, or type a path. Then open **Connect**, create a key per client, and paste the command it shows into each client (README › Connect Claude).
 
-## 8. HTTPS (recommended beyond your LAN)
+## 5. HTTPS (recommended beyond your LAN)
 
 API keys travel in a request header, so put Cortex behind the NAS's reverse proxy with TLS:
 
 1. Proxy `https://cortex.example.com` → `http://localhost:8765`.
-2. In `nas.yaml`: add the proxy host name to `allowed_hosts`, set `secure_cookies: true` and `public_url: https://cortex.example.com`, and set `forwarded_allow_ips` to the address the proxy connects from (the Docker bridge gateway, often `172.17.0.1`).
-3. Recreate the container:
+2. In `config/override/nas.local.yaml`: add the proxy host name to `allowed_hosts`, set `secure_cookies: true` and `public_url: https://cortex.example.com`, and set `forwarded_allow_ips` to the address the proxy connects from (the Docker bridge gateway, often `172.17.0.1`).
+3. Redeploy: `.\scripts\ps1\deploy-nas.ps1`.
 
-   ```bash
-   # NAS shell
-   docker compose up -d --force-recreate
-   ```
+## By hand
+
+The script is these steps plus the folder, config and secret setup. From the repo root on your PC:
+
+```powershell
+# dev machine, PowerShell, repo root
+$env:CORTEX_VERSION = Get-Content VERSION
+docker --context synology compose --env-file .env.nas run --rm --no-deps cortex validate-config
+docker --context synology compose --env-file .env.nas up -d
+docker --context synology compose --env-file .env.nas logs -f cortex
+```

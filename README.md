@@ -13,7 +13,7 @@ The brain is routed by a `CORTEX.md` file: a routing table that points the AI at
 
 ## Deploy on a NAS
 
-[docs/setup-nas.md](docs/setup-nas.md) walks through it from nothing: folders, the two secret files, the config override, `docker compose`, and the first-run wizard. [docs/deployment.md](docs/deployment.md) covers shipping later versions; [docs/cheat-sheet.md](docs/cheat-sheet.md) covers day-to-day operations.
+From your PC, through the `synology` Docker context (the same one flammeau uses): copy `.env.nas.example` to `.env.nas`, then run `.\scripts\ps1\deploy-nas.ps1`. It creates the NAS folders, uploads the config override, asks once for the admin password, runs the pre-flight, starts Cortex and checks it answers. [docs/setup-nas.md](docs/setup-nas.md) has the details. [docs/deployment.md](docs/deployment.md) covers shipping later versions; [docs/cheat-sheet.md](docs/cheat-sheet.md) covers day-to-day operations.
 
 ## Connect Claude
 
@@ -55,17 +55,30 @@ Claude Desktop, through the [mcp-remote](https://www.npmjs.com/package/mcp-remot
 }
 ```
 
+claude.ai (web, Desktop app, mobile), once Cortex is on a public HTTPS address such as `https://cortex.dagher-shared.com` and your organization has the connector dialog's **Request headers** option: **Customize › Connectors › + › Add custom connector**.
+
+| Field | Value |
+| --- | --- |
+| Name | `Cortex` |
+| Remote MCP server URL | `https://cortex.dagher-shared.com/mcp` |
+| Sign-in (OAuth) | Off, if the dialog offers it: Cortex has no OAuth sign-in yet |
+| Request header name | `x-auth-token` (`Authorization` is reserved while the dialog's sign-in is on; `x-api-key` works too) |
+| Request header value | Your Cortex key (`ctx_…`), created for this client in the Connect tab |
+
+claude.ai's requests come from Anthropic's network (`160.79.104.0/21`), so a firewall in front of Cortex must let that range through, and the address must be in `server.allowed_hosts`.
+
 Revoking a key in the GUI cuts that client off immediately.
 
 ## Day to day
 
 | Say to Claude | What happens |
 | --- | --- |
-| `use the cortex` / `use your brain` (or the `/mcp__cortex__cortex` prompt) | Loads `CORTEX.md` for the session and mentions anything you approved that still needs writing |
+| `use the cortex` / `use your brain` (or the `/mcp__cortex__cortex` prompt) | Loads `CORTEX.md` and your personal map (`CEREBELLUM/MAP.md` with its `Always` sections) for the session, and mentions anything you approved that still needs writing; `reload the brain` loads them again |
 | `review synapse` / `what's pending?` (or `/mcp__cortex__synapse`) | Lists entries pending review and entries approved but not yet written |
 | `commit to memory HX0007` | Claude previews the exact edit, writes it into memory and moves the entry to ENGRAM |
 | `reject HX0007` | Moves it to ENGRAM with the reason, so it isn't proposed again |
-| `remember: …` | Queues and commits in one step |
+| `remember: …` / `remember for me: …` | Queues and commits in one step: to a MEMORY area, or to your personal layer (CEREBELLUM, with its MAP row) |
+| `check the brain` | Runs your brain's own audit (`scripts/check_brain.py`) and reports; changes nothing |
 | `turn off the brain` / `turn on the brain` | Flips the power switch for every client |
 
 In the GUI's **Synapse** tab, **Approve** moves an entry to an `## Approved` section in `SYNAPSE.md`. The next time a client loads the brain, it's told which entries are approved and offers to write them. Writing needs judgment (merge with the existing rule, settle conflicts), so the AI does it, not the GUI. **Reject** records the entry in ENGRAM straight away. **Send back** returns an approved entry to review.
@@ -76,7 +89,9 @@ In the GUI's **Synapse** tab, **Approve** moves an entry to an `## Approved` sec
 | --- | --- | --- |
 | `CORTEX.md` | Routing table and always-on rules | Only through an approved SYNAPSE commit (protected) |
 | `MEMORY/…` (or whatever you protect) | Instruction files per area | Only through an approved SYNAPSE commit (protected) |
-| `HIPPOCAMPUS/SYNAPSE.md` | Queue: `Next ID`, `## Pending`, `## Approved` | The synapse tools and the GUI |
+| `CEREBELLUM/…` | Your personal layer (preferences, environment, style); `MAP.md` says which sections each area loads | Only through an approved SYNAPSE commit (protected) |
+| `HIPPOCAMPUS/HIPPOCAMPUS.md` | Guide with SYNAPSE's and ENGRAM's templates | You (protected) |
+| `HIPPOCAMPUS/SYNAPSE.md` | Queue: `Next ID`, `## Pending`, `## Approved`; created from the guide's template when missing | The synapse tools and the GUI |
 | `HIPPOCAMPUS/ENGRAM.md` | Trail of committed and rejected entries, newest first | The synapse tools and the GUI |
 | Everything else (`PROJECTS/…`) | Project state, notes | Claude via `cortex_write`, you in Obsidian |
 
@@ -86,14 +101,16 @@ The protected list and the SYNAPSE and ENGRAM paths are in the GUI's **Settings*
 
 | Tool | Purpose |
 | --- | --- |
-| `cortex_load` | Returns `CORTEX.md` plus a short note on how to use the tools |
+| `cortex_load` | Returns `CORTEX.md`, the personal map and its `Always` sections, plus a short note on how to use the tools |
 | `cortex_read` | Reads a note by path, name or wikilink; `#Heading` reads one section |
 | `cortex_search` | Line search, optionally within a folder or file (e.g. ENGRAM before queueing) |
 | `cortex_list` | Notes with their tags (up to `mcp.list_limit`) |
 | `cortex_write` | Creates or edits unprotected notes (exact-match edits or whole content) |
-| `synapse_queue` | Adds a pending entry under the next ID |
+| `cortex_rename_heading` | Renames a heading in an unprotected note and updates every `[[note#Heading]]` link to it |
+| `cortex_check` | "check the brain": runs the brain's own audit script, or built-in link and ID checks when it has none |
+| `synapse_queue` | Adds a pending entry under the next ID, for a MEMORY area or a `CEREBELLUM/FILE#Section` |
 | `synapse_list` | Pending and approved entries, optionally the recent trail |
-| `synapse_commit` | Applies the memory edits (all validated before any is written) and moves the entry to ENGRAM |
+| `synapse_commit` | Applies the edits and any heading renames (all validated before any is written) to MEMORY or CEREBELLUM, and moves the entry to ENGRAM |
 | `synapse_reject` | Moves the entry to ENGRAM with a reason |
 | `cortex_power` | `on`, `off` or `status` |
 
@@ -105,6 +122,7 @@ The protected list and the SYNAPSE and ENGRAM paths are in the GUI's **Settings*
 - **Use HTTPS beyond your LAN.** Keys travel in a header. Put Cortex behind your NAS's reverse proxy with TLS ([docs/setup-nas.md](docs/setup-nas.md) › HTTPS).
 - **Content is data.** Note HTML is rendered with raw HTML disabled and a strict Content-Security-Policy. Tools only touch `.md` files inside the brain folder; dot-folders (`.obsidian`, `.git`) and paths that escape the folder are refused.
 - **Errors don't leak.** Every error response has one shape, `{"error": {"code", "message", "request_id"}}`; unexpected failures return a generic message and the request id, and the detail goes to the log.
+- **The brain's audit script runs on request.** `cortex_check` runs the vault's own `audit.script` (read-only, with a timeout, without Cortex's environment). Cortex itself only ever writes `.md` files, so no client can change that script through it.
 - **Audit trail.** Loads, note reads, writes, SYNAPSE decisions, power changes, logins and key changes are logged, with the client's key label and the request id, to the Activity tab and `/logs/cortex.log` (plain text, rotated).
 
 ## Configuration
@@ -146,7 +164,9 @@ Locally, the same files go in `./secrets/`; `config/override/local.yaml` also al
 | `gui.trail_limit`, `activity_limit` | 25, 150 | Items shown in the GUI |
 | `mcp.list_limit` | 300 | Most notes `cortex_list` returns |
 | `vault.max_note_bytes`, `scan_ttl_seconds` | 1 MB, 2 | Largest note read; how long the index is reused |
-| `layout.synapse`, `engram`, `memory` | `HIPPOCAMPUS/SYNAPSE.md`, `HIPPOCAMPUS/ENGRAM.md`, `MEMORY/` | Defaults when setup can't find them; seeds the protected list |
+| `layout.synapse`, `engram`, `hippocampus_guide` | `HIPPOCAMPUS/SYNAPSE.md`, `HIPPOCAMPUS/ENGRAM.md`, `HIPPOCAMPUS/HIPPOCAMPUS.md` | Where the hippocampus files and their templates live, relative to `CORTEX.md` |
+| `layout.memory`, `personal`, `personal_map` | `MEMORY/`, `CEREBELLUM/`, `CEREBELLUM/MAP.md` | Memory areas and the personal layer; with the guide, they seed the protected list |
+| `audit.script`, `timeout_seconds` | `scripts/check_brain.py`, 60 | The brain's audit for "check the brain" (empty: built-in checks) |
 | `setup.template_repo` | `jimmydagher/claude-brain` | GitHub `owner/repo` the wizard downloads |
 | `setup.download_timeout_seconds`, `max_download_bytes` | 60, 50 MB | Template download limits |
 | `secrets.dir`, `allow_env_fallback` | `/run/secrets`, `false` | Where secrets are read; env fallback (local only) |
@@ -156,7 +176,13 @@ Locally, the same files go in `./secrets/`; `config/override/local.yaml` also al
 
 ## Run it locally
 
-Needs Python 3.14 with pip (`python --version`). The project keeps its packages in its own `.venv` folder, so nothing is installed into your system Python.
+```powershell
+# dev machine, PowerShell 7, repo root
+.\scripts\ps1\run-local.ps1                                  # http://localhost:8765, brain in .\data\brain
+.\scripts\ps1\run-local.ps1 -BrainPath S:\Backup\Markdown\claude-brain   # serve your live brain
+```
+
+It creates `.venv` and installs `requirements-dev.txt` when needed, asks once for a local admin password (kept in the gitignored `secrets\`), runs `validate-config`, then serves until Ctrl+C. By hand, with Python 3.14 and pip (the project keeps its packages in its own `.venv` folder, so nothing is installed into your system Python):
 
 ```powershell
 # dev machine, repo root (PowerShell)

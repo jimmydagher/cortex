@@ -7,7 +7,19 @@ The commands to reach for when running Cortex or when something's wrong.
 | Command | Does | Where |
 | --- | --- | --- |
 | `python -m cortex serve` | Runs the GUI, API and `/mcp` until stopped | the container's default command |
-| `python -m cortex validate-config` | Checks config, secrets and folders; changes nothing | `docker compose run --rm cortex validate-config` on the NAS; `python -m cortex validate-config` locally, inside `.venv` (README › Run it locally) |
+| `python -m cortex validate-config` | Checks config, secrets and folders; changes nothing | `.\scripts\ps1\deploy-nas.ps1 -PreflightOnly` for the NAS; `.\scripts\ps1\run-local.ps1 -CheckOnly` on your PC |
+
+## Scripts (dev machine, PowerShell 7, repo root)
+
+| Script | Does |
+| --- | --- |
+| `.\scripts\ps1\deploy-nas.ps1` | Deploys `VERSION` to the NAS through the `synology` context: folders, config upload, missing secrets, pre-flight, start, health check |
+| `… -Version 0.1.0` | Deploys (or rolls back to) another published version |
+| `… -PreflightOnly` | Everything up to `validate-config`; starts nothing |
+| `… -ResetAdminPassword` / `-RotateSessionKey` | Replaces that secret on the NAS (everyone is signed out) |
+| `.\scripts\ps1\run-local.ps1` | Runs Cortex on your PC from `.venv` at http://localhost:8765 |
+| `… -BrainPath S:\Backup\Markdown\claude-brain` | Serves that brain folder (linked as `data\brain`, not copied) |
+| `… -CheckOnly` | Sets up `.venv` and secrets and runs `validate-config`; doesn't serve |
 
 ## Exit codes
 
@@ -21,7 +33,7 @@ The commands to reach for when running Cortex or when something's wrong.
 
 ## Logs
 
-- **Where:** `<CORTEX_LOGS_PATH>/cortex.log` on the NAS (rotated at `logging.max_bytes`, `logging.backups` old files kept), and the same lines in `docker compose logs cortex`.
+- **Where:** `<CORTEX_LOGS_PATH>/cortex.log` on the NAS (rotated at `logging.max_bytes`, `logging.backups` old files kept), and the same lines in `docker --context synology compose --env-file .env.nas logs -f cortex` from your PC.
 - **Format:** `2026-09-26T15:50:43-05:00 INFO    req=4f2a91c07b3e [laptop] commit: HX0002 → MEMORY/WRITING.md`. `[who]` lines are activity (also in the GUI's Activity tab), `(access)` lines are one per request, `(uvicorn.error)`-style lines come from libraries.
 - **Trace one request:** every error response carries a `request_id`; `grep 'req=<id>' cortex.log` shows everything that request did.
 - **More detail:** set `logging.level: DEBUG` in the override and recreate the container.
@@ -46,8 +58,8 @@ curl http://<nas>:8765/healthz        # "ok"
 | Add a client | GUI › Connect › Create key; paste the shown command into the client |
 | Cut a client off | GUI › Connect › Revoke (immediate) |
 | Turn the brain off or on for everyone | the header's Brain on/off button, or tell Claude "turn off the brain" |
-| Change or recover the admin password | rewrite `<secrets>/cortex-admin-pwd`, then `docker compose up -d --force-recreate` (everyone is signed out) |
-| Rotate the session key | `openssl rand -base64 48 \| tr -d '\n' > <secrets>/cortex-session-key`, then recreate (everyone is signed out) |
+| Change or recover the admin password | `.\scripts\ps1\deploy-nas.ps1 -ResetAdminPassword` (everyone is signed out) |
+| Rotate the session key | `.\scripts\ps1\deploy-nas.ps1 -RotateSessionKey` (everyone is signed out) |
 | Point Cortex at another brain | GUI › Settings › Run setup again |
 
 ## Where things live

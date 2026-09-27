@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from cortex.config import Config
-from cortex.errors import InvalidInputError, NotFoundError
+from cortex.errors import ConflictError, InvalidInputError, NotFoundError
 from cortex.vault import Edit, Vault, parse_note, scan_lines, section
 
 
@@ -15,17 +15,49 @@ def make_vault(config: Config, warnings: list[str] | None = None) -> Vault:
     return Vault(config.paths.brain, config.vault, sink.append)
 
 
-def test_parse_tags_and_links_skip_code() -> None:
+def test_parse_tags_links_and_headings_skip_code() -> None:
     # Regression: links inside code fences or inline code must not become graph edges.
-    tags, links = parse_note("---\ntags:\n  - a/b\n---\nSee [[X|x]] and [[Y#Head]] #inline\n```\n[[Z]]\n```\n`[[Q]]`")
-    assert tags == ["a/b", "inline"]
-    assert links == ["X", "Y"]
+    parsed = parse_note("---\ntags:\n  - a/b\n---\n## Intro\nSee [[X|x]] and [[Y#Head]] #inline [[#Intro]]\n```\n## Not a heading\n[[Z]]\n```\n`[[Q]]`")
+    assert parsed.tags == ["a/b", "inline"]
+    assert parsed.links == ["X", "Y"]
+    assert parsed.anchors == [("Y", "Head"), ("", "Intro")]
+    assert parsed.headings == {"intro"}
 
 
 def test_table_escaped_pipe_link() -> None:
     # Regression: claude-brain's routing table escapes the alias pipe as \|.
-    _, links = parse_note("| [[MEMORY/CODING\\|CODING]] |")
-    assert links == ["MEMORY/CODING"]
+    parsed = parse_note("| [[MEMORY/CODING\\|CODING]] | [[CEREBELLUM/STYLE#CODING\\|STYLE › CODING]] |")
+    assert parsed.links == ["MEMORY/CODING", "CEREBELLUM/STYLE"]
+    assert parsed.anchors == [("CEREBELLUM/STYLE", "CODING")]
+
+
+def test_dead_heading_links_are_reported(config: Config) -> None:
+    # Regression (brain audit parity): [[note#Heading]] to a missing heading is a dead link.
+    dead = make_vault(config).dead_links()
+    assert {"source": "PROJECTS/Acme/ACME.md", "target": "MEMORY/WRITING#Nope"} in dead
+    assert not any(item["target"] in ("MEMORY/WRITING#Avoid", "#Now") for item in dead)
+    assert not any(item["source"] == "CEREBELLUM/MAP.md" for item in dead)
+
+
+def test_rename_heading_plan_updates_every_link_form(config: Config) -> None:
+    plan = make_vault(config).rename_heading_plan("PROJECTS/Acme/ACME.md", "now", "Status", {})
+    assert set(plan) == {"PROJECTS/Acme/ACME.md", "PROJECTS/Acme/NOTES.md"}
+    assert "## Status" in plan["PROJECTS/Acme/ACME.md"] and "[[#Status]]" in plan["PROJECTS/Acme/ACME.md"]
+    notes = plan["PROJECTS/Acme/NOTES.md"]
+    assert "[[PROJECTS/Acme/ACME#Status|now]]" in notes and "[[ACME#Status]]" in notes
+    assert "[[ACME#Status\\|here]]" in notes  # table-escaped pipe kept
+    assert "`[[ACME#Now]]`" in notes  # code is left alone
+
+
+def test_rename_heading_plan_refuses_missing_duplicate_and_taken(config: Config, brain_dir: Path) -> None:
+    vault = make_vault(config)
+    with pytest.raises(NotFoundError):
+        vault.rename_heading_plan("PROJECTS/Acme/ACME.md", "Nope", "X", {})
+    with pytest.raises(ConflictError):
+        vault.rename_heading_plan("MEMORY/WRITING.md", "Avoid", "output", {})
+    (brain_dir / "TWICE.md").write_text("## A\n## A\n", encoding="utf-8")
+    with pytest.raises(InvalidInputError, match="2 headings"):
+        vault.rename_heading_plan("TWICE.md", "A", "B", {})
 
 
 def test_scan_lines_marks_fenced_code() -> None:

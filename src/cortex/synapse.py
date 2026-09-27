@@ -28,6 +28,8 @@ TARGET_ARROW = "→"
 # The ID a SYNAPSE without a "Next ID:" line starts from (claude-brain's convention).
 FIRST_ID_PREFIX, FIRST_ID_WIDTH, FIRST_ID_NUMBER = "HX", 4, 1
 PENDING_WORD, APPROVED_WORD, TRAIL_WORD = "pending", "approved", "trail"
+SYNAPSE_KIND, ENGRAM_KIND = "SYNAPSE", "ENGRAM"
+GUIDE_TEMPLATE = re.compile(r"^#{2,3} (?P<title>[^\n]+)\n+```markdown\n(?P<body>.*?)\n```", re.MULTILINE | re.DOTALL)
 APPROVED_HEADING = "## Approved"
 APPROVED_NOTE = "<!-- Approved by the human in Cortex; waiting to be written into memory. -->"
 
@@ -161,27 +163,66 @@ def _section_status(heading: str, current: EntryStatus) -> EntryStatus:
     return EntryStatus.APPROVED if APPROVED_WORD in heading.lower() else EntryStatus.PENDING
 
 
-class Hippocampus:
-    """Reads and changes SYNAPSE and ENGRAM; one lock serializes every change."""
+def templates_from_guide(text: str) -> dict[str, str]:
+    """Read the SYNAPSE and ENGRAM templates out of the brain's HIPPOCAMPUS guide.
 
-    def __init__(self, vault: Vault, synapse_path: str, engram_path: str) -> None:
+    Args:
+        text: the guide, where each template is a ```markdown block under a heading
+            naming the file (`## SYNAPSE.md template`).
+
+    Returns:
+        Template text by kind (`SYNAPSE`, `ENGRAM`), only for those the guide has.
+    """
+    found = {}
+    for match in GUIDE_TEMPLATE.finditer(text):
+        title = match.group("title").upper()
+        for kind in (SYNAPSE_KIND, ENGRAM_KIND):
+            if kind in title:
+                found[kind] = match.group("body").strip("\n") + "\n"
+    return found
+
+
+class Hippocampus:
+    """Reads and changes SYNAPSE and ENGRAM; one lock serializes every change.
+
+    A missing SYNAPSE or ENGRAM is created from the brain's own guide (its templates are
+    the brain's contract); the built-in templates are the fallback for brains without one.
+    """
+
+    def __init__(self, vault: Vault, synapse_path: str, engram_path: str, guide_path: str = "") -> None:
         self.vault = vault
         self.synapse_path = synapse_path
         self.engram_path = engram_path
+        self.guide_path = guide_path
         self._lock = threading.Lock()
 
     # ---------- reading ----------
 
-    def _load(self, relative: str, template: str) -> list[str]:
+    def template(self, kind: str) -> str:
+        """The template for a missing file: the guide's when it has one, else the built-in.
+
+        Args:
+            kind: `SYNAPSE` or `ENGRAM`.
+
+        Returns:
+            The template text.
+        """
+        if self.guide_path and self.vault.exists(self.guide_path):
+            from_guide = templates_from_guide(self.vault.read(self.guide_path)).get(kind)
+            if from_guide:
+                return from_guide
+        return SYNAPSE_TEMPLATE if kind == SYNAPSE_KIND else ENGRAM_TEMPLATE
+
+    def _load(self, relative: str, kind: str) -> list[str]:
         if not self.vault.exists(relative):
-            return template.splitlines()
+            return self.template(kind).splitlines()
         return self.vault.read(relative).splitlines()
 
     def _synapse(self) -> list[str]:
-        return self._load(self.synapse_path, SYNAPSE_TEMPLATE)
+        return self._load(self.synapse_path, SYNAPSE_KIND)
 
     def _engram(self) -> list[str]:
-        return self._load(self.engram_path, ENGRAM_TEMPLATE)
+        return self._load(self.engram_path, ENGRAM_KIND)
 
     def entries(self, lines: list[str] | None = None) -> list[Entry]:
         """Every entry still in SYNAPSE.
@@ -240,6 +281,18 @@ class Hippocampus:
             if entry.id == entry_id:
                 raise ConflictError(f"{entry_id} was already {entry.status}")
         raise NotFoundError(f"{entry_id} is not in SYNAPSE")
+
+    def declared_next_id(self) -> str:
+        """What SYNAPSE's `Next ID:` line says, for the audit to compare with next_id().
+
+        Returns:
+            e.g. `HX0004`, or "" when SYNAPSE has no such line.
+        """
+        for line in self._synapse():
+            match = NEXT_ID.match(line)
+            if match:
+                return match.group("prefix") + match.group("number")
+        return ""
 
     def next_id(self, lines: list[str] | None = None) -> str:
         """The next free ID: above both SYNAPSE's `Next ID` and every ID already used.
@@ -453,8 +506,8 @@ class Hippocampus:
         return self._to_trail(entry_id, line)
 
     def ensure_files(self) -> None:
-        """Create SYNAPSE and ENGRAM from the templates when missing."""
+        """Create SYNAPSE and ENGRAM from the templates when missing (in-transit files a clone doesn't have)."""
         with self._lock:
-            for relative, template in ((self.synapse_path, SYNAPSE_TEMPLATE), (self.engram_path, ENGRAM_TEMPLATE)):
+            for relative, kind in ((self.synapse_path, SYNAPSE_KIND), (self.engram_path, ENGRAM_KIND)):
                 if not self.vault.exists(relative):
-                    self.vault.write_text(relative, template)
+                    self.vault.write_text(relative, self.template(kind))

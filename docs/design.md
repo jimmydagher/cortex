@@ -27,6 +27,7 @@ In the owner's words (2026-09-26):
 - 2026-09-26: Config is `config/default.yaml` + `override/<env>.yaml`, validated at startup; runtime state (API key hashes, power switch, setup paths) is data in `/data/cortex/state.json` (owner's choice).
 - 2026-09-26: Secrets are Docker secrets files (`cortex-admin-pwd`, `cortex-session-key`); the environment fallback is for local development only.
 - 2026-09-26: CI builds the image once per VERSION and pushes it to GHCR; the NAS pulls that tag (owner's choice).
+- 2026-09-26: The brain gained a personal layer (CEREBELLUM) and untracked in-transit files. Cortex follows it: the personal map loads with CORTEX, CEREBELLUM is protected, missing SYNAPSE/ENGRAM come from the brain's guide, headings rename with their links, and "check the brain" runs the brain's own script (the human's file; Cortex never writes `.py`).
 
 ## Out of scope for now
 

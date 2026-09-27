@@ -35,17 +35,20 @@ On a push to `main`, CI builds `ghcr.io/jimmydagher/cortex:<VERSION>` for amd64 
 
 ## 4. Update the NAS
 
-Read the version's `CHANGELOG.md` entry first: a MINOR or MAJOR release may need a new config key or secret.
+Read the version's `CHANGELOG.md` entry first: a MINOR or MAJOR release may need a new config key or secret. Once CI has published the tag:
 
-```bash
-# NAS shell, in the folder with docker-compose.yml
-sed -i 's/^CORTEX_VERSION=.*/CORTEX_VERSION=0.1.1/' .env
-docker compose pull
-docker compose run --rm cortex validate-config
-docker compose up -d
-docker compose logs --tail 20 cortex
+```powershell
+# dev machine, PowerShell, repo root, on main after the release commit
+.\scripts\ps1\deploy-nas.ps1
 ```
+
+It deploys the version in `VERSION`: pull, config upload, pre-flight, start, health check ([setup-nas.md](setup-nas.md) › Deploy lists every step).
 
 ## 5. Roll back
 
-Set `CORTEX_VERSION` back to the previous release and `docker compose up -d`. State (`/data/cortex/state.json`) and the brain are untouched by an image change.
+```powershell
+# dev machine, PowerShell, repo root
+.\scripts\ps1\deploy-nas.ps1 -Version 0.1.0
+```
+
+State (`/data/cortex/state.json`) and the brain are untouched by an image change.

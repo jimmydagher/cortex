@@ -66,6 +66,8 @@ CSRF_HEADER = "x-cortex-csrf"
 REQUEST_ID_RESPONSE_HEADER = "x-request-id"
 INCOMING_REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{8,64}$")
 MCP_PATH = "/mcp"
+# Besides Authorization: the standard API-key headers claude.ai's connector dialog offers.
+KEY_HEADERS = (b"x-auth-token", b"x-api-key")
 HEALTH_PATH = "/healthz"
 GUI_ACTOR = "gui"
 CSP = (
@@ -205,6 +207,27 @@ class UnexpectedErrors:
                 await _send_error(scope, receive, send, ErrorCode.INTERNAL, GENERIC_MESSAGE)
 
 
+def presented_keys(headers: dict[bytes, bytes]) -> list[str]:
+    """Every credential a client sent: `Authorization: Bearer <key>`, and the key in `x-auth-token` or
+    `x-api-key` (raw or as `Bearer <key>`), which claude.ai's request headers use when its own
+    sign-in keeps `Authorization` for an OAuth token.
+
+    Args:
+        headers: the request's headers, lowercase names.
+
+    Returns:
+        The candidate keys, in that order, without empty ones.
+    """
+    candidates = []
+    scheme, _, token = headers.get(b"authorization", b"").decode("latin-1").partition(" ")
+    if scheme.lower() == "bearer":
+        candidates.append(token.strip())
+    for name in KEY_HEADERS:
+        value = headers.get(name, b"").decode("latin-1").strip()
+        candidates.append(value[len("bearer "):].strip() if value.lower().startswith("bearer ") else value)
+    return [candidate for candidate in candidates if candidate]
+
+
 class BearerGate:
     """Only requests with a valid API key reach the MCP transport.
 
@@ -216,13 +239,15 @@ class BearerGate:
         self.app, self.brain = app, brain
         self.controlled = {CLIENT_HEADER, REQUEST_ID_HEADER}
 
+    def _check(self, candidates: list[str]) -> dict[str, str] | None:
+        return next((record for key in candidates if (record := self.brain.state.check_key(key))), None)
+
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         headers = [(name, value) for name, value in scope["headers"] if name.decode("latin-1").lower() not in self.controlled]
-        authorization = dict(headers).get(b"authorization", b"").decode("latin-1")
-        scheme, _, token = authorization.partition(" ")
-        record = await run_in_threadpool(self.brain.state.check_key, token.strip()) if scheme.lower() == "bearer" else None
+        record = await run_in_threadpool(self._check, presented_keys(dict(headers)))
         if not record:
-            await _send_error(scope, receive, send, ErrorCode.UNAUTHORIZED, "send Authorization: Bearer <Cortex API key>",
+            await _send_error(scope, receive, send, ErrorCode.UNAUTHORIZED,
+                              "send your Cortex API key as Authorization: Bearer <key> or in an x-auth-token header",
                               {"WWW-Authenticate": 'Bearer realm="cortex"'})
             return
         headers += [(CLIENT_HEADER.encode(), record["label"].encode("utf-8", "replace")),

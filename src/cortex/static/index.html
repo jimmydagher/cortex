@@ -60,7 +60,7 @@
   <!-- App -->
   <section id="view-app" hidden>
     <header class="topbar">
-      <div class="brand"><span class="brand-mark"></span>Cortex</div>
+      <div class="brand"><span class="brand-mark"></span>Cortex <span id="version" class="version" title="Running version"></span></div>
       <nav class="tabs" id="tabs">
         <button data-tab="brain" class="active">Brain</button>
         <button data-tab="synapse">Synapse <span id="badge-synapse" class="badge" hidden></span></button>
@@ -153,6 +153,9 @@
       <h3>Claude Desktop</h3>
       <p class="muted">Through the <code>mcp-remote</code> bridge (needs Node.js), in <code>claude_desktop_config.json</code>.</p>
       <div class="copy-block"><pre id="snip-desktop"></pre><button class="small" data-copy="snip-desktop">Copy</button></div>
+      <h3>claude.ai (web, Desktop, mobile)</h3>
+      <p class="muted">Customize › Connectors › + › Add custom connector. Needs Cortex on a public HTTPS address and the <strong>Request headers</strong> option. Turn the connector's sign-in off if the dialog offers it; Cortex uses its own key.</p>
+      <div class="copy-block"><pre id="snip-claude-ai"></pre><button class="small" data-copy="snip-claude-ai">Copy</button></div>
       <h3>Using it</h3>
       <ul class="plain">
         <li><code>use the cortex</code> or the <code>/mcp__cortex__cortex</code> prompt loads the brain for the session.</li>
