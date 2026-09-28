@@ -117,6 +117,7 @@ The protected list and the SYNAPSE and ENGRAM paths are in the GUI's **Settings*
 ## Security
 
 - **Two credentials.** The GUI uses the admin password (signed, HttpOnly, SameSite=Strict cookie; `gui.login_max_failures` wrong attempts lock that IP out for `gui.login_window_seconds`). MCP clients use per-client API keys, stored as SHA-256 hashes in `/data/cortex/state.json` and shown once.
+- **Optional read-only guest.** A second GUI password (`cortex-guest-pwd`, created with `deploy-nas.ps1 -SetGuestPassword`) signs in a guest who can read the brain, SYNAPSE and activity. Every change, the API keys and setup return 403 for a guest session. The guest has no MCP access.
 - **Secrets are files.** The admin password and the session-signing key are Docker secrets (`cortex-admin-pwd`, `cortex-session-key`), never config or environment values in a deployment.
 - **Host checking.** Cortex answers only to the names in `server.allowed_hosts`, for the GUI and `/mcp` alike.
 - **Use HTTPS beyond your LAN.** Keys travel in a header. Put Cortex behind your NAS's reverse proxy with TLS ([docs/setup-nas.md](docs/setup-nas.md) › HTTPS).
@@ -143,6 +144,7 @@ All settings live in [config/default.yaml](config/default.yaml). Each environmen
 | --- | --- | --- |
 | `cortex-admin-pwd` | GUI admin password | file in `secrets.dir` (`/run/secrets` via compose `secrets:`) |
 | `cortex-session-key` | Signs GUI session cookies | same |
+| `cortex-guest-pwd` | Optional read-only GUI guest password; no file, no guest account | same |
 
 Locally, the same files go in `./secrets/`; `config/override/local.yaml` also allows `CORTEX_ADMIN_PWD` / `CORTEX_SESSION_KEY` environment variables as a fallback.
 
@@ -170,7 +172,7 @@ Locally, the same files go in `./secrets/`; `config/override/local.yaml` also al
 | `setup.template_repo` | `jimmydagher/claude-brain` | GitHub `owner/repo` the wizard downloads |
 | `setup.download_timeout_seconds`, `max_download_bytes` | 60, 50 MB | Template download limits |
 | `secrets.dir`, `allow_env_fallback` | `/run/secrets`, `false` | Where secrets are read; env fallback (local only) |
-| `secrets.admin_password`, `session_key` | `cortex-admin-pwd`, `cortex-session-key` | Secret names |
+| `secrets.admin_password`, `session_key`, `guest_password` | `cortex-admin-pwd`, `cortex-session-key`, `cortex-guest-pwd` | Secret names (the guest one is optional) |
 | `state.initial_power`, `last_used_flush_seconds` | `on`, 60 | Power for a new state file; key last-used write interval |
 | `runtime.*` | derived | Environment, version (from `VERSION`), files loaded |
 

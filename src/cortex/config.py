@@ -111,6 +111,7 @@ class SecretsConfig(_Section):
     allow_env_fallback: bool
     admin_password: str = Field(pattern=SECRET_NAME_PATTERN)
     session_key: str = Field(pattern=SECRET_NAME_PATTERN)
+    guest_password: str = Field(pattern=SECRET_NAME_PATTERN)
 
 
 class StateConfig(_Section):

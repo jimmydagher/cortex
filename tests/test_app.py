@@ -200,6 +200,58 @@ def test_gui_requires_login_and_csrf(client: TestClient) -> None:
     assert client.post("/api/power", json={"state": "off"}, headers=CSRF).json()["power"] == "off"
 
 
+GUEST_PASSWORD = "guest-password"
+
+
+def test_guest_can_read_but_not_change(config: Config, logger: Logger, errors: ErrorHandler) -> None:
+    (config.secrets.dir / "cortex-guest-pwd").write_text(GUEST_PASSWORD, encoding="utf-8")
+    with build(config, logger, errors) as client:
+        login_response = client.post("/api/login", json={"password": GUEST_PASSWORD})
+        assert login_response.status_code == 200 and login_response.json()["role"] == "guest"
+        assert client.get("/api/session").json() == {"authenticated": True, "role": "guest"}
+        for path in ("/api/status", "/api/graph", "/api/note?path=CORTEX.md", "/api/synapse", "/api/activity"):
+            assert client.get(path).status_code == 200, path
+        for path in ("/api/keys", "/api/setup", "/api/setup/job"):
+            response = client.get(path)
+            assert response.status_code == 403 and error_of(response)["code"] == "forbidden", path
+        writes = [("POST", "/api/power", {"state": "off"}), ("POST", "/api/keys", {"label": "x"}),
+                  ("DELETE", "/api/keys/abc", None), ("POST", "/api/synapse/HX0001/approve", None),
+                  ("POST", "/api/settings", {"cortex_path": "CORTEX.md", "protected": []}),
+                  ("POST", "/api/setup", {"mode": "blank"})]
+        for method, path, body in writes:
+            response = client.request(method, path, json=body, headers=CSRF)
+            assert response.status_code == 403 and "read-only" in error_of(response)["message"], path
+        assert client.get("/api/status").json()["power"] == "on"
+        # The admin still signs in with their own password and can change things.
+        login(client)
+        assert client.get("/api/session").json()["role"] == "admin"
+        assert client.get("/api/keys").status_code == 200
+
+
+def test_guest_cookie_is_not_an_admin_cookie(config: Config, logger: Logger, errors: ErrorHandler) -> None:
+    (config.secrets.dir / "cortex-guest-pwd").write_text(GUEST_PASSWORD, encoding="utf-8")
+    with build(config, logger, errors) as client:
+        client.post("/api/login", json={"password": GUEST_PASSWORD})
+        guest_cookie = client.cookies["cortex_session"]
+    # Without the guest secret, the guest's cookie no longer opens anything.
+    (config.secrets.dir / "cortex-guest-pwd").unlink()
+    with build(config, logger, errors) as client:
+        client.cookies.set("cortex_session", guest_cookie)
+        assert client.get("/api/status").status_code == 401
+        assert client.post("/api/login", json={"password": GUEST_PASSWORD}).status_code == 401
+
+
+def test_guest_password_must_differ_from_admin(config: Config, logger: Logger, errors: ErrorHandler) -> None:
+    (config.secrets.dir / "cortex-guest-pwd").write_text(ADMIN_PASSWORD, encoding="utf-8")
+    with pytest.raises(SecretError, match="cortex-guest-pwd must differ"):
+        create_app(config, logger, Secrets(config.secrets), errors)
+
+
+def test_no_guest_account_by_default(client: TestClient) -> None:
+    login(client)
+    assert client.get("/api/session").json() == {"authenticated": True, "role": "admin"}
+
+
 def test_login_lockout(client: TestClient) -> None:
     for _ in range(5):
         client.post("/api/login", json={"password": "nope"})

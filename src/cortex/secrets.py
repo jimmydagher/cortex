@@ -47,6 +47,24 @@ class Secrets:
         Raises:
             SecretError: naming the secret and where it was looked for, never a value.
         """
+        value = self.optional(name)
+        if value:
+            return value
+        where = f"{self._config.dir / name}" + (f" or ${env_name(name)}" if self._config.allow_env_fallback else "")
+        raise SecretError([f"secret {name} is missing: put it in {where}"])
+
+    def optional(self, name: str) -> str | None:
+        """Return a secret's value, or None when it isn't set (for secrets that switch a feature on).
+
+        Args:
+            name: the secret's name.
+
+        Returns:
+            The secret value, stripped of surrounding whitespace, or None when absent or empty.
+
+        Raises:
+            SecretError: the file exists but can't be read.
+        """
         path = self._config.dir / name
         try:
             value = path.read_text(encoding="utf-8").strip()
@@ -62,8 +80,7 @@ class Secrets:
                 if self._warn:
                     self._warn(f"secret {name} read from ${env_name(name)} (local-development fallback)")
                 return value
-        where = f"{path}" + (f" or ${env_name(name)}" if self._config.allow_env_fallback else "")
-        raise SecretError([f"secret {name} is missing: put it in {where}"])
+        return None
 
     def check(self, names: list[str]) -> list[str]:
         """Report every secret that can't be read, without returning any value.

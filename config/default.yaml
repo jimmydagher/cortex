@@ -77,6 +77,9 @@ secrets:
   allow_env_fallback: false
   admin_password: cortex-admin-pwd
   session_key: cortex-session-key
+  # Optional read-only GUI login (browse notes, graph, SYNAPSE, activity; change nothing).
+  # No file means no guest account; it must differ from the admin password.
+  guest_password: cortex-guest-pwd
 
 state:
   # Power switch for a brand-new state file.

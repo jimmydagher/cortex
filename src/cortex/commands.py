@@ -16,7 +16,7 @@ from .config import Config, summary
 from .errors import ErrorHandler, ExitCode, SecretError, StartupError
 from .logs import Logger
 from .secrets import Secrets
-from .web import create_app
+from .web import create_app, guest_password
 
 SERVER_ACTOR = "server"
 
@@ -49,6 +49,12 @@ def validate_config(config: Config, logger: Logger, errors: ErrorHandler) -> Exi
     """
     secret_store = Secrets(config.secrets)
     problems = secret_store.check([config.secrets.admin_password, config.secrets.session_key])
+    try:
+        guest = guest_password(config, secret_store)
+    except SecretError as error:
+        problems += [problem for problem in error.problems if problem not in problems]
+    else:
+        print(f"guest account {'on (read-only GUI login)' if guest else 'off'}")
     problems += _writable(config.paths.brain, "paths.brain")
     problems += _writable(config.paths.state, "paths.state")
     problems += _writable(config.paths.logs, "paths.logs")

@@ -1,4 +1,5 @@
-"""The HTTP app: bearer-gated /mcp for clients, password-gated GUI and JSON API for the human.
+"""The HTTP app: bearer-gated /mcp for clients, password-gated GUI and JSON API for the human
+(an admin who can change things, and an optional read-only guest).
 
 Handlers are thin: parse and validate the body (Pydantic models below), call one Brain
 method in the thread pool (Brain does file and network I/O), shape the response.
@@ -48,9 +49,11 @@ from .errors import (
     CortexError,
     ErrorCode,
     ErrorHandler,
+    ForbiddenError,
     InvalidInputError,
     NotFoundError,
     RateLimitedError,
+    SecretError,
     UnauthorizedError,
 )
 from .logs import REQUEST_ID, Logger
@@ -258,50 +261,83 @@ class BearerGate:
 # ---------- GUI sessions ----------
 
 
-class Sessions:
-    """Stateless signed cookies and a login lockout.
+class Role(StrEnum):
+    """Who a GUI session belongs to."""
 
-    The lockout lives in process memory: Cortex runs as one process on one NAS
-    (recorded as a deliberate deviation in CLAUDE.md).
+    ADMIN = "admin"
+    GUEST = "guest"
+
+
+def guest_password(config: Config, secret_store: Secrets) -> str | None:
+    """The optional guest password; its secret file existing is what turns the guest account on.
+
+    Args:
+        config: validated configuration (secret names).
+        secret_store: the secrets accessor.
+
+    Returns:
+        The guest password, or None when there's no guest account.
+
+    Raises:
+        SecretError: the admin password is missing, or the guest password equals it
+            (a login couldn't tell the two apart).
+    """
+    guest = secret_store.optional(config.secrets.guest_password)
+    if guest is not None and hmac.compare_digest(guest.encode(), secret_store.get(config.secrets.admin_password).encode()):
+        raise SecretError([f"secret {config.secrets.guest_password} must differ from {config.secrets.admin_password}"])
+    return guest
+
+
+class Sessions:
+    """Stateless signed cookies, one signing key per role, and a login lockout.
+
+    Each role's key is derived from its own password, so changing one password signs out
+    only that role. The lockout lives in process memory: Cortex runs as one process on
+    one NAS (recorded as a deliberate deviation in CLAUDE.md).
     """
 
-    def __init__(self, session_key: str, password: str, config: Config) -> None:
-        self.key = hashlib.sha256(f"{session_key}:{password}".encode()).digest()  # a password change logs everyone out
-        self.password = password
+    def __init__(self, session_key: str, admin_password: str, guest: str | None, config: Config) -> None:
+        self.passwords = {Role.ADMIN: admin_password} | ({Role.GUEST: guest} if guest else {})
+        self.keys = {role: hashlib.sha256(f"{session_key}:{password}".encode() if role == Role.ADMIN
+                                          else f"{session_key}:{role}:{password}".encode()).digest()
+                     for role, password in self.passwords.items()}
         self.lifetime = config.gui.session_days * 86400
         self.window = config.gui.login_window_seconds
         self.max_failures = config.gui.login_max_failures
         self.failures: dict[str, list[float]] = {}
 
-    def issue(self) -> str:
-        """A new signed session cookie value."""
+    def issue(self, role: Role) -> str:
+        """A new signed session cookie value for a role."""
         payload = f"{int(time.time())}.{secrets.token_urlsafe(12)}"
-        return payload + "." + hmac.new(self.key, payload.encode(), "sha256").hexdigest()
+        return payload + "." + hmac.new(self.keys[role], payload.encode(), "sha256").hexdigest()
 
-    def valid(self, cookie: str | None) -> bool:
-        """Whether a cookie is ours and not expired.
+    def role(self, cookie: str | None) -> Role | None:
+        """Whose session a cookie is, if it's ours and not expired.
 
         Args:
             cookie: the cookie value, if any.
 
         Returns:
-            True for a valid, unexpired session.
+            The session's role, or None for a missing, forged or expired cookie.
         """
         if not cookie or cookie.count(".") != 2:
-            return False
+            return None
         payload, signature = cookie.rsplit(".", 1)
-        expected = hmac.new(self.key, payload.encode(), "sha256").hexdigest()
-        if not hmac.compare_digest(signature, expected):
-            return False
         issued = payload.split(".", 1)[0]
-        return issued.isdigit() and time.time() - int(issued) < self.lifetime
+        if not issued.isdigit() or time.time() - int(issued) >= self.lifetime:
+            return None
+        return next((role for role, key in self.keys.items()
+                     if hmac.compare_digest(signature, hmac.new(key, payload.encode(), "sha256").hexdigest())), None)
 
-    def check_password(self, address: str, password: str) -> None:
+    def check_password(self, address: str, password: str) -> Role:
         """Check a login attempt.
 
         Args:
             address: the client's IP, for the lockout.
             password: what was typed.
+
+        Returns:
+            The role whose password it is.
 
         Raises:
             RateLimitedError: too many failures from this address in the window.
@@ -311,10 +347,13 @@ class Sessions:
         self.failures[address] = recent
         if len(recent) >= self.max_failures:
             raise RateLimitedError("too many attempts; wait a few minutes")
-        if not hmac.compare_digest(password.encode(), self.password.encode()):
+        # Every password is compared, so the time taken doesn't tell whether a guest account exists.
+        matches = [role for role, expected in self.passwords.items() if hmac.compare_digest(password.encode(), expected.encode())]
+        if not matches:
             recent.append(time.time())
             raise UnauthorizedError("wrong password")
         self.failures.pop(address, None)
+        return matches[0]
 
 
 # ---------- request bodies ----------
@@ -432,31 +471,37 @@ def create_app(config: Config, logger: Logger, secret_store: Secrets, errors: Er
     Args:
         config: validated configuration.
         logger: the central logger.
-        secret_store: the secrets accessor (admin password, session key).
+        secret_store: the secrets accessor (admin password, session key, optional guest password).
         errors: the global error handler.
 
     Returns:
         The Starlette app serving the GUI, its API and /mcp.
 
     Raises:
-        SecretError: a required secret is missing.
+        SecretError: a required secret is missing, or the guest password equals the admin's.
     """
     admin_password = secret_store.get(config.secrets.admin_password)
     session_key = secret_store.get(config.secrets.session_key)
+    guest = guest_password(config, secret_store)
     brain = Brain(config, logger, errors.handle)
-    sessions = Sessions(session_key, admin_password, config)
+    sessions = Sessions(session_key, admin_password, guest, config)
     mcp = build_mcp(brain, errors)
     # Host checking happens once for every route in HostCheck, so the SDK's own copy stays off.
     mcp.streamable_http_app(stateless_http=True, json_response=True,
                             transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False))
     session_manager = mcp.session_manager
 
-    def api(handler: Callable[[Request], Awaitable[Any]], write: bool = False) -> Callable[[Request], Awaitable[Response]]:
+    def api(handler: Callable[[Request], Awaitable[Any]], write: bool = False,
+            admin: bool = False) -> Callable[[Request], Awaitable[Response]]:
+        # Writes, and reads marked admin, are refused to the read-only guest.
         async def endpoint(request: Request) -> Response:
-            if not sessions.valid(request.cookies.get(COOKIE)):
+            role = sessions.role(request.cookies.get(COOKIE))
+            if role is None:
                 raise UnauthorizedError("login required")
             if write and request.headers.get(CSRF_HEADER) != "1":
                 return error_response(ErrorCode.FORBIDDEN, "missing CSRF header")
+            if (write or admin) and role != Role.ADMIN:
+                raise ForbiddenError("the guest account is read-only")
             result = await handler(request)
             return result if isinstance(result, Response) else JSONResponse(result)
 
@@ -468,14 +513,14 @@ def create_app(config: Config, logger: Logger, secret_store: Secrets, errors: Er
         body = await parse(request, LoginBody)
         address = request.client.host if request.client else "?"
         try:
-            sessions.check_password(address, body.password)
+            role = sessions.check_password(address, body.password)
         except (UnauthorizedError, RateLimitedError):
             logger.event(GUI_ACTOR, "login failed", address, level=logging.WARNING)
             raise
-        response = JSONResponse({"ok": True})
-        response.set_cookie(COOKIE, sessions.issue(), max_age=sessions.lifetime, httponly=True, samesite="strict",
+        response = JSONResponse({"ok": True, "role": role.value})
+        response.set_cookie(COOKIE, sessions.issue(role), max_age=sessions.lifetime, httponly=True, samesite="strict",
                             secure=config.server.secure_cookies)
-        logger.event(GUI_ACTOR, "login", address)
+        logger.event(GUI_ACTOR, "login", f"{address} as {role.value}")
         return response
 
     async def logout(request: Request) -> Response:
@@ -484,7 +529,8 @@ def create_app(config: Config, logger: Logger, secret_store: Secrets, errors: Er
         return response
 
     async def session(request: Request) -> Response:
-        return JSONResponse({"authenticated": sessions.valid(request.cookies.get(COOKIE))})
+        role = sessions.role(request.cookies.get(COOKIE))
+        return JSONResponse({"authenticated": role is not None, "role": role.value if role else None})
 
     # ----- reads -----
 
@@ -588,13 +634,13 @@ def create_app(config: Config, logger: Logger, secret_store: Secrets, errors: Er
         Route("/api/synapse/{id}/{action}", api(synapse_action, write=True), methods=["POST"]),
         Route("/api/activity", api(activity)),
         Route("/api/power", api(power, write=True), methods=["POST"]),
-        Route("/api/keys", api(list_keys)),
+        Route("/api/keys", api(list_keys, admin=True)),
         Route("/api/keys", api(create_key, write=True), methods=["POST"]),
         Route("/api/keys/{id}", api(revoke_key, write=True), methods=["DELETE"]),
         Route("/api/settings", api(settings, write=True), methods=["POST"]),
-        Route("/api/setup", api(setup_scan)),
+        Route("/api/setup", api(setup_scan, admin=True)),
         Route("/api/setup", api(setup, write=True), methods=["POST"]),
-        Route("/api/setup/job", api(setup_job)),
+        Route("/api/setup/job", api(setup_job, admin=True)),
         Mount("/static", StaticFiles(directory=STATIC), name="static"),
     ]
 

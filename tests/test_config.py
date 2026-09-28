@@ -74,6 +74,23 @@ def test_validate_config_reports_ok_and_problems(tmp_path: Path, brain_dir: Path
         logger.close()
 
 
+def test_validate_config_checks_the_optional_guest_password(tmp_path: Path, brain_dir: Path,
+                                                             capsys: pytest.CaptureFixture[str]) -> None:
+    config = make_config(tmp_path, brain_dir)
+    logger = Logger(config.logging, config.paths.logs)
+    try:
+        assert validate_config(config, logger, ErrorHandler()) == ExitCode.SUCCEEDED
+        assert "guest account off" in capsys.readouterr().out
+        (config.secrets.dir / "cortex-guest-pwd").write_text("test-password", encoding="utf-8")  # same as the admin's
+        assert validate_config(config, logger, ErrorHandler()) == ExitCode.STARTUP_FAILURE
+        assert "PROBLEM secret cortex-guest-pwd must differ from cortex-admin-pwd" in capsys.readouterr().out
+        (config.secrets.dir / "cortex-guest-pwd").write_text("another-password", encoding="utf-8")
+        assert validate_config(config, logger, ErrorHandler()) == ExitCode.SUCCEEDED
+        assert "guest account on" in capsys.readouterr().out
+    finally:
+        logger.close()
+
+
 def test_no_command_is_invalid_input(capsys: pytest.CaptureFixture[str]) -> None:
     # Regression: a run with no instruction must fail, not do nothing and report success.
     assert main([]) == ExitCode.INVALID_INPUT

@@ -17,6 +17,7 @@ The commands to reach for when running Cortex or when something's wrong.
 | `… -Version 0.1.0` | Deploys (or rolls back to) another published version |
 | `… -PreflightOnly` | Everything up to `validate-config`; starts nothing |
 | `… -ResetAdminPassword` / `-RotateSessionKey` | Replaces that secret on the NAS (everyone is signed out) |
+| `… -SetGuestPassword` / `-RemoveGuest` | Creates or changes the read-only guest login (guests are signed out), or deletes it |
 | `.\scripts\ps1\run-local.ps1` | Runs Cortex on your PC from `.venv` at http://localhost:8765 |
 | `… -BrainPath S:\Backup\Markdown\claude-brain` | Serves that brain folder (linked as `data\brain`, not copied) |
 | `… -CheckOnly` | Sets up `.venv` and secrets and runs `validate-config`; doesn't serve |
@@ -60,6 +61,7 @@ curl http://<nas>:8765/healthz        # "ok"
 | Turn the brain off or on for everyone | the header's Brain on/off button, or tell Claude "turn off the brain" |
 | Change or recover the admin password | `.\scripts\ps1\deploy-nas.ps1 -ResetAdminPassword` (everyone is signed out) |
 | Rotate the session key | `.\scripts\ps1\deploy-nas.ps1 -RotateSessionKey` (everyone is signed out) |
+| Give someone read-only GUI access | `.\scripts\ps1\deploy-nas.ps1 -SetGuestPassword`, then share that password; `-RemoveGuest` takes it away |
 | Point Cortex at another brain | GUI › Settings › Run setup again |
 
 ## Where things live

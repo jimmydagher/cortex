@@ -33,7 +33,8 @@ services:
       - ${CORTEX_CONFIG_PATH:?set CORTEX_CONFIG_PATH in .env.nas}:/config:ro
       # Logs: cortex.log, plain text, rotated.
       - ${CORTEX_LOGS_PATH:?set CORTEX_LOGS_PATH in .env.nas}:/logs
-      # Secrets: one file per secret (cortex-admin-pwd, cortex-session-key), owner-only.
+      # Secrets: one file per secret (cortex-admin-pwd, cortex-session-key, optional
+      # cortex-guest-pwd), owner-only.
       # A read-only folder mount rather than compose `secrets:`, whose file paths the
       # client resolves: with a remote context that would look on this PC, not the NAS.
       - ${CORTEX_SECRETS_PATH:?set CORTEX_SECRETS_PATH in .env.nas}:/run/secrets:ro

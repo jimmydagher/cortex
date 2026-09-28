@@ -64,11 +64,12 @@
       <nav class="tabs" id="tabs">
         <button data-tab="brain" class="active">Brain</button>
         <button data-tab="synapse">Synapse <span id="badge-synapse" class="badge" hidden></span></button>
-        <button data-tab="connect">Connect</button>
+        <button data-tab="connect" class="admin-only">Connect</button>
         <button data-tab="activity">Activity</button>
-        <button data-tab="settings">Settings</button>
+        <button data-tab="settings" class="admin-only">Settings</button>
       </nav>
       <div class="topbar-right">
+        <span class="guest-chip guest-only" title="Signed in as guest: you can read, not change">Guest · read-only</span>
         <button id="power" class="power" title="Turn the brain on or off for every client"><span class="dot"></span><span id="power-label">Brain on</span></button>
         <button id="logout" class="ghost">Sign out</button>
       </div>

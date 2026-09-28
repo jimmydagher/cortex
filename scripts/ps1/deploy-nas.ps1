@@ -17,7 +17,8 @@
          (created on the first run from the nas.yaml template, with the NAS's
          address filled in: edit it for extra host names or HTTPS);
       3. writes any missing secret on the NAS: the admin password is asked
-         for once, the session key is generated. Values travel over the
+         for once, the session key is generated, and the optional read-only
+         guest password only with -SetGuestPassword. Values travel over the
          SSH-tunneled Docker API on stdin and are never saved on this PC;
       4. runs `validate-config` in the real container wiring (the pre-flight);
       5. pulls the image, starts it, and waits for /healthz to answer.
@@ -49,12 +50,24 @@
 .PARAMETER RotateSessionKey
     Generate a new session key on the NAS (signs everyone out).
 
+.PARAMETER SetGuestPassword
+    Create the read-only guest account, or change its password: asks for a
+    guest password (it must differ from the admin's) and writes it to the NAS.
+    A guest can browse the brain, graph, SYNAPSE and activity but change nothing.
+    Changing it signs out guests only.
+
+.PARAMETER RemoveGuest
+    Delete the guest password from the NAS: the guest account stops working
+    on the restart this deploy does.
+
 .EXAMPLE
     .\scripts\ps1\deploy-nas.ps1
 .EXAMPLE
     .\scripts\ps1\deploy-nas.ps1 -PreflightOnly
 .EXAMPLE
     .\scripts\ps1\deploy-nas.ps1 -Version 0.1.0 -ResetAdminPassword
+.EXAMPLE
+    .\scripts\ps1\deploy-nas.ps1 -SetGuestPassword
 #>
 #Requires -Version 7
 [CmdletBinding()]
@@ -65,7 +78,9 @@ param(
     [string]$NasConfig,
     [switch]$PreflightOnly,
     [switch]$ResetAdminPassword,
-    [switch]$RotateSessionKey
+    [switch]$RotateSessionKey,
+    [switch]$SetGuestPassword,
+    [switch]$RemoveGuest
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,7 +91,9 @@ if (-not $EnvFile) { $EnvFile = Join-Path $repoRoot ".env.nas" }
 if (-not $NasConfig) { $NasConfig = Join-Path $repoRoot "config/override/nas.local.yaml" }
 $adminSecret = "cortex-admin-pwd"
 $sessionSecret = "cortex-session-key"
+$guestSecret = "cortex-guest-pwd"
 $healthWaitSeconds = 60
+if ($SetGuestPassword -and $RemoveGuest) { throw "Use -SetGuestPassword or -RemoveGuest, not both." }
 
 function Invoke-Checked {
     param([string]$Description, [scriptblock]$Command)
@@ -175,19 +192,28 @@ if ((Invoke-OnNas -Mounts "${config}:/c" -Script "cat > /c/nas.yaml && chown $ow
 # ---------- 3. secrets ----------
 
 function Test-NasSecret { param([string]$Name) return (Invoke-OnNas -Mounts "${secrets}:/s" -Script "test -s /s/$Name") -eq 0 }
+# Cortex reads secrets only at startup, so any change here makes step 5 recreate the container.
+$secretsChanged = $false
 function Set-NasSecret {
     param([string]$Name, [string]$Value)
     $write = "umask 077 && cat > /s/$Name && chown $owner /s/$Name"
     if ((Invoke-OnNas -Mounts "${secrets}:/s" -Script $write -InputText $Value) -ne 0) { throw "Couldn't write the $Name secret." }
+    $script:secretsChanged = $true
 }
 
-if ($ResetAdminPassword -or -not (Test-NasSecret $adminSecret)) {
-    Write-Host "==> Setting the GUI admin password on the NAS" -ForegroundColor Cyan
-    $first = Read-Host "New Cortex admin password" -AsSecureString
+function Read-NewPassword {
+    param([string]$Prompt)
+    $first = Read-Host $Prompt -AsSecureString
     $second = Read-Host "Repeat it" -AsSecureString
     $plain = ConvertFrom-SecureString $first -AsPlainText
     if ($plain -ne (ConvertFrom-SecureString $second -AsPlainText)) { throw "The passwords don't match; nothing was changed." }
     if ($plain.Length -lt 12) { throw "Use at least 12 characters; nothing was changed." }
+    return $plain
+}
+
+if ($ResetAdminPassword -or -not (Test-NasSecret $adminSecret)) {
+    Write-Host "==> Setting the GUI admin password on the NAS" -ForegroundColor Cyan
+    $plain = Read-NewPassword "New Cortex admin password"
     Set-NasSecret $adminSecret $plain
     Remove-Variable plain
 } else {
@@ -198,6 +224,22 @@ if ($RotateSessionKey -or -not (Test-NasSecret $sessionSecret)) {
     Set-NasSecret $sessionSecret (New-SessionKey)
 } else {
     Write-Host "==> Session key already set on the NAS (-RotateSessionKey to replace it)" -ForegroundColor DarkGray
+}
+# The guest account is optional: it exists exactly when its secret file does. The pre-flight
+# below refuses a guest password equal to the admin's.
+if ($SetGuestPassword) {
+    Write-Host "==> Setting the read-only guest password on the NAS" -ForegroundColor Cyan
+    $plain = Read-NewPassword "New Cortex guest password (not the admin's)"
+    Set-NasSecret $guestSecret $plain
+    Remove-Variable plain
+} elseif ($RemoveGuest) {
+    Write-Host "==> Removing the guest account from the NAS" -ForegroundColor Cyan
+    if ((Invoke-OnNas -Mounts "${secrets}:/s" -Script "rm -f /s/$guestSecret") -ne 0) { throw "Couldn't remove the $guestSecret secret." }
+    $secretsChanged = $true
+} elseif (Test-NasSecret $guestSecret) {
+    Write-Host "==> Guest account on (-SetGuestPassword to change its password, -RemoveGuest to delete it)" -ForegroundColor DarkGray
+} else {
+    Write-Host "==> No guest account (-SetGuestPassword to create a read-only one)" -ForegroundColor DarkGray
 }
 
 # ---------- 4. pre-flight ----------
@@ -212,8 +254,12 @@ if ($PreflightOnly) {
 
 # ---------- 5. start and check ----------
 
+# Built by appending, not `$x = if (...) { @(...) }`: an if-expression unwraps a one-item array
+# into a string, which PowerShell would then pass to docker one character at a time.
+$upArgs = @("up", "-d")
+if ($secretsChanged) { $upArgs += "--force-recreate" }
 Invoke-Checked "Starting Cortex $Version" {
-    docker --context $Context compose --env-file $EnvFile -f $composeFile up -d
+    docker --context $Context compose --env-file $EnvFile -f $composeFile $upArgs
 }
 Invoke-Checked "Container status" {
     docker --context $Context compose --env-file $EnvFile -f $composeFile ps

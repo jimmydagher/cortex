@@ -4,7 +4,8 @@
 "use strict";
 
 const byId = (id) => document.getElementById(id);
-const state = { status: null, graph: null, graphView: null, tab: "brain", key: null, notePath: null };
+const state = { status: null, graph: null, graphView: null, tab: "brain", key: null, notePath: null, role: null };
+const ADMIN_TABS = ["connect", "settings"];
 const SETUP_POLL_MS = 1000;
 const STATUS_POLL_MS = 15000;
 
@@ -84,8 +85,19 @@ function when(iso) {
 async function boot() {
   const session = await api("/api/session");
   if (!session.authenticated) return show("login");
+  state.role = session.role;
+  // The server refuses guests every change; this only hides the controls they can't use.
+  document.body.classList.toggle("guest", state.role === "guest");
+  if (state.role === "guest" && ADMIN_TABS.includes(state.tab)) state.tab = "brain";
   await refreshStatus();
-  if (!state.status.configured) return openSetup();
+  if (!state.status.configured) {
+    if (state.role !== "guest") return openSetup();
+    await api("/api/logout", { method: "POST" });
+    show("login");
+    byId("login-error").textContent = "Cortex isn't set up yet: the admin needs to sign in first.";
+    byId("login-error").hidden = false;
+    return;
+  }
   show("app");
   switchTab(state.tab);
 }
@@ -121,6 +133,7 @@ async function refreshStatus() {
 }
 
 byId("power").addEventListener("click", async () => {
+  if (state.role === "guest") return;
   const next = state.status.power === "on" ? "off" : "on";
   try {
     await api("/api/power", { method: "POST", body: { state: next } });
@@ -305,7 +318,7 @@ function entryCard(entry, approved) {
   const buttons = () => approved
     ? [element("button", { onclick: () => act("unapprove") }, "Send back"), element("button", { class: "danger ghost", onclick: rejectFlow }, "Reject")]
     : [element("button", { class: "primary", onclick: () => act("approve") }, "Approve"), element("button", { class: "danger", onclick: rejectFlow }, "Reject")];
-  actions.replaceChildren(...buttons());
+  if (state.role !== "guest") actions.replaceChildren(...buttons());
   return element("div", { class: `entry${approved ? " approved" : ""}` },
     element("div", { class: "entry-top" },
       element("span", { class: "entry-id" }, entry.id),

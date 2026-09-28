@@ -16,7 +16,21 @@ All notable changes, newest first. See `VERSION` for the current release.
 ### Bug/Issues/Fixes
 (none)
 
-## 🆕VERSION 0.2.1 📅 2026-09-27
+## 🆕VERSION 0.2.2 📅 2026-09-27
+
+### Added or New Features
+- Optional read-only guest account for the GUI. A guest signs in with their own password and can browse the graph, notes, SYNAPSE and activity, but can't change anything or see API keys, settings or setup. Operator: `deploy-nas.ps1 -SetGuestPassword` creates it (the `cortex-guest-pwd` secret, which must differ from the admin password); `-RemoveGuest` deletes it.
+
+### Removed
+(none)
+
+### Changed
+(none)
+
+### Bug/Issues/Fixes
+- `deploy-nas.ps1 -ResetAdminPassword` / `-RotateSessionKey` now restart Cortex so the new secret takes effect; before, a running container kept the old one until its next restart.
+
+## 🟨VERSION 0.2.1 📅 2026-09-27
 
 ### Added or New Features
 (none)

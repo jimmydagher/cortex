@@ -37,13 +37,25 @@ Every run does the same safe steps, in order:
 1. **Pulls** `ghcr.io/jimmydagher/cortex:<VERSION>` on the NAS (`-Version` picks another tag).
 2. **Creates the NAS folders** from `.env.nas` and gives Cortex's own (state, config, logs, secrets) to `PUID:PGID`. An existing brain folder's ownership is left alone.
 3. **Uploads the config override.** The first run creates `config/override/nas.local.yaml` (gitignored) from the `nas.yaml` template, with the NAS's address as `server.allowed_hosts`. Edit it later for more host names or HTTPS; every deploy uploads it as the NAS's `/config/nas.yaml`.
-4. **Writes missing secrets** on the NAS. The first run asks for the GUI admin password (twice) and generates the session key. Values go to the NAS over the SSH-tunneled Docker connection and are never saved on your PC.
+4. **Writes missing secrets** on the NAS. The first run asks for the GUI admin password (twice) and generates the session key. With `-SetGuestPassword` it also asks for a guest password (see [Guest account](#guest-account-optional)). Values go to the NAS over the SSH-tunneled Docker connection and are never saved on your PC. A run that changes a secret recreates the container so Cortex picks it up.
 5. **Pre-flight:** runs `validate-config` with the real container wiring and stops on any problem. `-PreflightOnly` stops here without starting anything.
 6. **Starts Cortex** and waits until `http://<nas>:<CORTEX_PORT>/healthz` answers.
 
 ## 4. First run
 
 Open `http://<nas>:8765`, sign in with the admin password, and pick a setup option: use an existing `CORTEX.md`, download the claude-brain template, start blank, or type a path. Then open **Connect**, create a key per client, and paste the command it shows into each client (README › Connect Claude).
+
+## Guest account (optional)
+
+A guest signs in to the GUI with their own password and can browse the graph, read notes, and see SYNAPSE, the trail and activity. They can't approve or reject entries, switch the brain off, see or create API keys, change settings or run setup. The server refuses these actions, and the GUI hides them. There's no guest account until you create one:
+
+```powershell
+# dev machine, PowerShell, repo root
+.\scripts\ps1\deploy-nas.ps1 -SetGuestPassword   # create it, or change its password (signs guests out)
+.\scripts\ps1\deploy-nas.ps1 -RemoveGuest        # delete it
+```
+
+The guest password is the `cortex-guest-pwd` secret. It must be at least 12 characters and differ from the admin password; the pre-flight stops the deploy if it doesn't. The guest account covers the GUI only: MCP clients always use API keys.
 
 ## 5. HTTPS (recommended beyond your LAN)
 

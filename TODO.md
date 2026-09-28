@@ -8,6 +8,7 @@
 - [ ] #8 Edit notes in the GUI — today notes are read-only there
 - [ ] #9 Lock down admin if failed 5 times.
 - [ ] #10 version should come from the file, not .env.nas
+- [ ] #11 record in claude.ai instructions on how to use cortex vs preferences or claude's memory.
 
 ---
 
