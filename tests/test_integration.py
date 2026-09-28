@@ -21,12 +21,14 @@ def test_download_real_template_into_empty_and_occupied_folders(config: Config, 
     assert bootstrap.download_template(empty, config.setup) == "CORTEX.md"
     assert (empty / ".obsidian" / "graph.json").is_file() and not (empty / ".obsidian" / "plugins").exists()
     # The repo keeps personal and in-transit files out: only the guides ship; setup creates SYNAPSE/ENGRAM from the guide.
-    assert (empty / "HIPPOCAMPUS" / "HIPPOCAMPUS.md").is_file() and (empty / "CEREBELLUM" / "CEREBELLUM.md").is_file()
+    assert (empty / "HIPPOCAMPUS" / "HIPPOCAMPUS.md").is_file() and (empty / "PREFRONTAL" / "PREFRONTAL.md").is_file()
+    assert (empty / "NEOCORTEX" / "NEOCORTEX.md").is_file() and not (empty / "THALAMUS.md").exists()
     brain = Brain(make_config(tmp_path, empty), logger, ErrorHandler().handle)
     brain.configure("CORTEX.md")
     synapse = (empty / "HIPPOCAMPUS" / "SYNAPSE.md").read_text(encoding="utf-8")
-    assert "Next ID: HX0001" in synapse and "CEREBELLUM/FILE#Section" in synapse  # the guide's template, not Cortex's fallback
-    assert brain.is_protected("CEREBELLUM/ANY.md") and brain.is_protected("HIPPOCAMPUS/HIPPOCAMPUS.md")
+    assert "Next ID: HX0001" in synapse and "PREFRONTAL/FILE#Section" in synapse  # the guide's template, not Cortex's fallback
+    assert brain.is_protected("PREFRONTAL/ANY.md") and brain.is_protected("HIPPOCAMPUS/HIPPOCAMPUS.md")
+    assert not brain.is_protected("PREFRONTAL/PROJECTS/Any/ANY.md")
 
     occupied = tmp_path / "occupied"
     occupied.mkdir()

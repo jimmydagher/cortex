@@ -28,7 +28,7 @@ One asyncio event loop (uvicorn/Starlette). Blocking work never runs on it: GUI 
 - `favicon.ico` is generated from the shapes in `scripts/python/make_favicon.py` (kept in step with `favicon.svg`); never edit the `.ico`.
 - `scripts/python/release.py` and `scripts/git/*` are copied unchanged from the SDSI plugin; update them by recopying.
 - Follow the brain, don't hardcode it: SYNAPSE/ENGRAM templates come from the brain's HIPPOCAMPUS guide, "check the brain" runs the brain's own audit script, and layout paths are config (`layout.*`). Built-in copies are fallbacks only.
-- The personal layer (`CEREBELLUM/`) is human-owned: protected by default and changed only through `synapse_commit`.
+- The personal layer (`PREFRONTAL/`) is human-owned: protected by default and changed only through `synapse_commit`; project hubs under `PREFRONTAL/PROJECTS/` are exempt (a `!` rule).
 - Local checks before calling anything done: `python scripts/python/check.py` (ruff, mypy strict, pytest; the tools' settings live in that script).
 - No TOML or extra config files: app settings only in `config/*.yaml`, packages only in `requirements*.in` → `requirements*.txt` (regenerate with `scripts/python/lock.py`). Cortex isn't installed as a package: `src/` goes on `PYTHONPATH` and it runs as `python -m cortex`.
 

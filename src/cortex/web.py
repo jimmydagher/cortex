@@ -541,7 +541,7 @@ def create_app(config: Config, logger: Logger, secret_store: Secrets, errors: Er
         return result
 
     async def graph(request: Request) -> dict[str, Any]:
-        return await run_in_threadpool(brain.vault.graph)
+        return await run_in_threadpool(brain.graph)
 
     async def note(request: Request) -> dict[str, Any]:
         view = await run_in_threadpool(brain.note_view, request.query_params.get("path", ""))

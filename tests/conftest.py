@@ -76,12 +76,7 @@ def brain_dir(tmp_path: Path) -> Path:
         ---
         # AI Second Brain
 
-        | Task | Go To |
-        | --- | --- |
-        | Code | [[MEMORY/CODING\\|CODING]] |
-        | Writing | [[MEMORY/WRITING\\|WRITING]] |
-
-        Personal layer: if `CEREBELLUM/MAP.md` exists, read it once. Rules: [[CEREBELLUM/CEREBELLUM|CEREBELLUM]].
+        Areas: [[NEOCORTEX/NEOCORTEX|NEOCORTEX]]. Personal layer: [[PREFRONTAL/PREFRONTAL|PREFRONTAL]].
 
         ## Brain Upkeep
         Queue in [[HIPPOCAMPUS/SYNAPSE|SYNAPSE]]; trail in [[HIPPOCAMPUS/ENGRAM|ENGRAM]]; templates in [[HIPPOCAMPUS/HIPPOCAMPUS|HIPPOCAMPUS]].
@@ -89,6 +84,18 @@ def brain_dir(tmp_path: Path) -> Path:
         ```text
         [[NOT/A/LINK]]
         ```
+        """)
+    write(root, "NEOCORTEX/NEOCORTEX.md", """
+        ---
+        tags:
+          - memory/core
+        ---
+        The area index. Up: [[CORTEX]].
+
+        | Task | Go To |
+        | --- | --- |
+        | Code | [[NEOCORTEX/CODING\\|CODING]] |
+        | Writing | [[NEOCORTEX/WRITING\\|WRITING]] |
         """)
     write(root, "HIPPOCAMPUS/HIPPOCAMPUS.md", """
         ---
@@ -108,7 +115,7 @@ def brain_dir(tmp_path: Path) -> Path:
         Next ID: HX0001
 
         ## Pending
-        <!-- Format: - [ ] HX0001 · YYYY-MM-DD · → MEMORY/FILE › Section or → CEREBELLUM/FILE#Section · change · why · source -->
+        <!-- Format: - [ ] HX0001 · YYYY-MM-DD · → NEOCORTEX/FILE › Section or → PREFRONTAL/FILE#Section · change · why · source -->
         ```
 
         ## ENGRAM.md template
@@ -122,49 +129,40 @@ def brain_dir(tmp_path: Path) -> Path:
         ## Trail
         ```
         """)
-    write(root, "CEREBELLUM/CEREBELLUM.md", """
+    write(root, "PREFRONTAL/PREFRONTAL.md", """
         ---
         tags:
           - memory/personal
         ---
-        > The human's own layer; loads through `CEREBELLUM/MAP.md`.
+        > The human's own layer: its files' sections are the index. Up: [[CORTEX]].
 
         ## Where a lesson goes
         Another-dev test first.
         """)
-    write(root, "CEREBELLUM/MAP.md", """
+    write(root, "PREFRONTAL/PERSONA.md", """
         ---
         tags:
           - memory/personal
         ---
-        > Which sections to load, by area.
+        > Up: [[PREFRONTAL/PREFRONTAL|PREFRONTAL]]
 
-        ## Always
-        - [[CEREBELLUM/PERSONA#Always|PERSONA › Always]]
-
-        ## CODING
-        - [[CEREBELLUM/STYLE#CODING|STYLE › CODING]]
-        """)
-    write(root, "CEREBELLUM/PERSONA.md", """
-        ---
-        tags:
-          - memory/personal
-        ---
         ## Always
         - Direct, no small talk.
         """)
-    write(root, "CEREBELLUM/STYLE.md", """
+    write(root, "PREFRONTAL/STYLE.md", """
         ---
         tags:
           - memory/personal
         ---
+        > Up: [[PREFRONTAL/PREFRONTAL|PREFRONTAL]]
+
         ## CODING
         - Log files are plain text, one line per event.
 
         ## WRITING
         - Short sentences.
         """)
-    write(root, "MEMORY/CODING.md", """
+    write(root, "NEOCORTEX/CODING.md", """
         ---
         tags: [memory/technical]
         ---
@@ -172,7 +170,7 @@ def brain_dir(tmp_path: Path) -> Path:
         - Debug by reproduction.
         Pairs with [[WRITING]] and `[[ALSO/NOT/A/LINK]]`.
         """)
-    write(root, "MEMORY/WRITING.md", """
+    write(root, "NEOCORTEX/WRITING.md", """
         ---
         tags:
           - memory/communication
@@ -183,21 +181,21 @@ def brain_dir(tmp_path: Path) -> Path:
         ## Output
         - Short.
         """)
-    write(root, "PROJECTS/Acme/ACME.md", """
+    write(root, "PREFRONTAL/PROJECTS/Acme/ACME.md", """
         ---
         tags:
           - project/acme
         ---
         ## Now
         Starting. See [[Missing Note]] and ![[diagram.png]].
-        Rules: [[MEMORY/WRITING#Avoid]], [[MEMORY/WRITING#Nope]], and back to [[#Now]].
+        Rules: [[NEOCORTEX/WRITING#Avoid]], [[NEOCORTEX/WRITING#Nope]], and back to [[#Now]].
         """)
-    write(root, "PROJECTS/Acme/NOTES.md", """
+    write(root, "PREFRONTAL/PROJECTS/Acme/NOTES.md", """
         ---
         tags:
           - project/acme
         ---
-        Status: [[PROJECTS/Acme/ACME#Now|now]] · [[ACME#Now]] · table | [[ACME#Now\\|here]] |
+        Status: [[PREFRONTAL/PROJECTS/Acme/ACME#Now|now]] · [[ACME#Now]] · table | [[ACME#Now\\|here]] |
         Not a link: `[[ACME#Now]]`
         """)
     write(root, "HIPPOCAMPUS/SYNAPSE.md", """
@@ -210,7 +208,7 @@ def brain_dir(tmp_path: Path) -> Path:
         Next ID: HX0002
 
         ## Pending
-        <!-- Format: - [ ] HX0001 · YYYY-MM-DD · → MEMORY/FILE › Section · proposed change · why · source -->
+        <!-- Format: - [ ] HX0001 · YYYY-MM-DD · → NEOCORTEX/FILE › Section · proposed change · why · source -->
         """)
     write(root, "HIPPOCAMPUS/ENGRAM.md", """
         ---
@@ -220,8 +218,8 @@ def brain_dir(tmp_path: Path) -> Path:
         > Trail.
 
         ## Trail
-        <!-- Committed: - [x] HX0001 · proposed YYYY-MM-DD · committed YYYY-MM-DD · landed in MEMORY/FILE › Section · summary -->
-        - [x] HX0001 · proposed 2026-09-26 · committed 2026-09-26 · landed in MEMORY/CODING › Core Rules · first lesson
+        <!-- Committed: - [x] HX0001 · proposed YYYY-MM-DD · committed YYYY-MM-DD · landed in NEOCORTEX/FILE › Section · summary -->
+        - [x] HX0001 · proposed 2026-09-26 · committed 2026-09-26 · landed in NEOCORTEX/CODING › Core Rules · first lesson
         """)
     return root
 

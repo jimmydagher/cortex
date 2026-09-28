@@ -35,7 +35,7 @@ The commands to reach for when running Cortex or when something's wrong.
 ## Logs
 
 - **Where:** `<CORTEX_LOGS_PATH>/cortex.log` on the NAS (rotated at `logging.max_bytes`, `logging.backups` old files kept), and the same lines in `docker --context synology compose --env-file .env.nas logs -f cortex` from your PC.
-- **Format:** `2026-09-26T15:50:43-05:00 INFO    req=4f2a91c07b3e [laptop] commit: HX0002 → MEMORY/WRITING.md`. `[who]` lines are activity (also in the GUI's Activity tab), `(access)` lines are one per request, `(uvicorn.error)`-style lines come from libraries.
+- **Format:** `2026-09-26T15:50:43-05:00 INFO    req=4f2a91c07b3e [laptop] commit: HX0002 → NEOCORTEX/WRITING.md`. `[who]` lines are activity (also in the GUI's Activity tab), `(access)` lines are one per request, `(uvicorn.error)`-style lines come from libraries.
 - **Trace one request:** every error response carries a `request_id`; `grep 'req=<id>' cortex.log` shows everything that request did.
 - **More detail:** set `logging.level: DEBUG` in the override and recreate the container.
 

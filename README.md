@@ -2,14 +2,14 @@
 
 An MCP server with a web GUI that serves a Markdown second brain to Claude (or any MCP client). It runs in a container, typically on a NAS, and reads the brain from a folder outside the container (`/data/brain`), so Obsidian, git and Cortex can all work on the same files.
 
-The brain is routed by a `CORTEX.md` file: a routing table that points the AI at the one instruction file a task needs. Structure beyond that is yours. The [claude-brain](https://github.com/jimmydagher/claude-brain) template is one way to lay it out, and the setup wizard can download it for you.
+The brain starts at a `CORTEX.md` file, and a router (`NEOCORTEX/NEOCORTEX.md`, the area index, by default) points the AI at the one instruction file a task needs. Structure beyond that is yours. The [claude-brain](https://github.com/jimmydagher/claude-brain) template is one way to lay it out, and the setup wizard can download it for you.
 
 ## What it does
 
-- **Follows the network of notes.** `cortex_load` returns `CORTEX.md`; `cortex_read` opens whatever it routes to. Wikilinks resolve the way Obsidian resolves them (`[[MEMORY/CODING|CODING]]`, `[[CODING]]`, `[[CORTEX#Brain Upkeep]]`), so any folder layout works.
-- **Gates memory through the hippocampus.** New lessons are queued in `SYNAPSE.md` and wait for your decision. Approve them in the GUI or tell Claude "commit to memory HX0007"; rejected ideas go to `ENGRAM.md` so they aren't proposed again. Protected notes (the routing file and memory areas) refuse direct writes, so the gate is enforced by the server, not only by the prompt.
+- **Follows the network of notes.** `cortex_load` returns `CORTEX.md` and its router; `cortex_read` opens whatever they route to. Wikilinks resolve the way Obsidian resolves them (`[[NEOCORTEX/CODING|CODING]]`, `[[CODING]]`, `[[CORTEX#Brain Upkeep]]`), so any folder layout works.
+- **Gates memory through the hippocampus.** New lessons are queued in `SYNAPSE.md` and wait for your decision. Approve them in the GUI or tell Claude "commit to memory HX0007"; rejected ideas go to `ENGRAM.md` so they aren't proposed again. Protected notes (CORTEX, the router, memory areas and your personal layer) refuse direct writes, so the gate is enforced by the server, not only by the prompt.
 - **Has a power switch.** "Turn off the brain" makes every tool answer "off" for every client until you turn it back on. Nothing needs uninstalling.
-- **Shows you the brain.** The GUI has a graph view (colored from your `.obsidian/graph.json`), a note reader, the SYNAPSE review queue, per-client API keys and an activity log.
+- **Shows you the brain.** The GUI has a graph view (colored from your `.obsidian/graph.json`, with the entry point `CORTEX.md` drawn larger, with a dark yellow label and a soft orange glow), a note reader, the SYNAPSE review queue, per-client API keys and an activity log.
 
 ## Deploy on a NAS
 
@@ -73,11 +73,11 @@ Revoking a key in the GUI cuts that client off immediately.
 
 | Say to Claude | What happens |
 | --- | --- |
-| `use the cortex` / `use your brain` (or the `/mcp__cortex__cortex` prompt) | Loads `CORTEX.md` and your personal map (`CEREBELLUM/MAP.md` with its `Always` sections) for the session, and mentions anything you approved that still needs writing; `reload the brain` loads them again |
+| `use the cortex` / `use your brain` (or the `/mcp__cortex__cortex` prompt) | Loads `CORTEX.md`, the area index `NEOCORTEX/NEOCORTEX.md` and your personal layer (the `Always` sections of your `PREFRONTAL/` files, and their other sections listed by area) for the session, and mentions anything you approved that still needs writing; `reload the brain` loads them again |
 | `review synapse` / `what's pending?` (or `/mcp__cortex__synapse`) | Lists entries pending review and entries approved but not yet written |
 | `commit to memory HX0007` | Claude previews the exact edit, writes it into memory and moves the entry to ENGRAM |
 | `reject HX0007` | Moves it to ENGRAM with the reason, so it isn't proposed again |
-| `remember: …` / `remember for me: …` | Queues and commits in one step: to a MEMORY area, or to your personal layer (CEREBELLUM, with its MAP row) |
+| `remember: …` / `remember for me: …` | Queues and commits in one step: to a NEOCORTEX area, or to your personal layer (PREFRONTAL) |
 | `check the brain` | Runs your brain's own audit (`scripts/check_brain.py`) and reports; changes nothing |
 | `turn off the brain` / `turn on the brain` | Flips the power switch for every client |
 
@@ -87,30 +87,30 @@ In the GUI's **Synapse** tab, **Approve** moves an entry to an `## Approved` sec
 
 | File | Role | Who changes it |
 | --- | --- | --- |
-| `CORTEX.md` | Routing table and always-on rules | Only through an approved SYNAPSE commit (protected) |
-| `MEMORY/…` (or whatever you protect) | Instruction files per area | Only through an approved SYNAPSE commit (protected) |
-| `CEREBELLUM/…` | Your personal layer (preferences, environment, style); `MAP.md` says which sections each area loads | Only through an approved SYNAPSE commit (protected) |
+| `CORTEX.md` | Entry point: always-on rules and brain upkeep | Only through an approved SYNAPSE commit (protected) |
+| `NEOCORTEX/…` (or whatever you protect) | Instruction files per area; `NEOCORTEX.md` is their index and the router | Only through an approved SYNAPSE commit (protected) |
+| `PREFRONTAL/…` | Your personal layer: preference files whose `##` sections are named like the areas that load them (`## Always` loads every session), and your projects | Only through an approved SYNAPSE commit (protected), except `PREFRONTAL/PROJECTS/`, which is written directly |
 | `HIPPOCAMPUS/HIPPOCAMPUS.md` | Guide with SYNAPSE's and ENGRAM's templates | You (protected) |
 | `HIPPOCAMPUS/SYNAPSE.md` | Queue: `Next ID`, `## Pending`, `## Approved`; created from the guide's template when missing | The synapse tools and the GUI |
 | `HIPPOCAMPUS/ENGRAM.md` | Trail of committed and rejected entries, newest first | The synapse tools and the GUI |
-| Everything else (`PROJECTS/…`) | Project state, notes | Claude via `cortex_write`, you in Obsidian |
+| `PREFRONTAL/PROJECTS/…` and anything unprotected | Project state, notes | Claude via `cortex_write`, you in Obsidian |
 
-The protected list and the SYNAPSE and ENGRAM paths are in the GUI's **Settings**. A trailing `/` protects a folder. Cortex writes atomically and keeps each file's line endings; entries keep the `- [ ] HX0002 · date · → target · change · why · source` format, so the brain stays readable in Obsidian and compatible with `check_brain.py`.
+The protected list and the SYNAPSE and ENGRAM paths are in the GUI's **Settings**. A trailing `/` protects a folder. A protected rule starting with `!` exempts a path (hippocampus files excepted). The defaults, one per line: `CORTEX.md`, `NEOCORTEX/`, `PREFRONTAL/`, `HIPPOCAMPUS/HIPPOCAMPUS.md`, `!PREFRONTAL/PROJECTS/`. Cortex writes atomically and keeps each file's line endings; entries keep the `- [ ] HX0002 · date · → target · change · why · source` format, so the brain stays readable in Obsidian and compatible with `check_brain.py`.
 
 ## MCP tools
 
 | Tool | Purpose |
 | --- | --- |
-| `cortex_load` | Returns `CORTEX.md`, the personal map and its `Always` sections, plus a short note on how to use the tools |
+| `cortex_load` | Returns `CORTEX.md`, the area index `NEOCORTEX/NEOCORTEX.md`, the personal `Always` sections and the personal sections by area, plus a short note on how to use the tools |
 | `cortex_read` | Reads a note by path, name or wikilink; `#Heading` reads one section |
 | `cortex_search` | Line search, optionally within a folder or file (e.g. ENGRAM before queueing) |
 | `cortex_list` | Notes with their tags (up to `mcp.list_limit`) |
 | `cortex_write` | Creates or edits unprotected notes (exact-match edits or whole content) |
 | `cortex_rename_heading` | Renames a heading in an unprotected note and updates every `[[note#Heading]]` link to it |
 | `cortex_check` | "check the brain": runs the brain's own audit script, or built-in link and ID checks when it has none |
-| `synapse_queue` | Adds a pending entry under the next ID, for a MEMORY area or a `CEREBELLUM/FILE#Section` |
+| `synapse_queue` | Adds a pending entry under the next ID, for a NEOCORTEX area or a `PREFRONTAL/FILE#Section` |
 | `synapse_list` | Pending and approved entries, optionally the recent trail |
-| `synapse_commit` | Applies the edits and any heading renames (all validated before any is written) to MEMORY or CEREBELLUM, and moves the entry to ENGRAM |
+| `synapse_commit` | Applies the edits and any heading renames (all validated before any is written) to NEOCORTEX or PREFRONTAL, and moves the entry to ENGRAM |
 | `synapse_reject` | Moves the entry to ENGRAM with a reason |
 | `cortex_power` | `on`, `off` or `status` |
 
@@ -167,7 +167,7 @@ Locally, the same files go in `./secrets/`; `config/override/local.yaml` also al
 | `mcp.list_limit` | 300 | Most notes `cortex_list` returns |
 | `vault.max_note_bytes`, `scan_ttl_seconds` | 1 MB, 2 | Largest note read; how long the index is reused |
 | `layout.synapse`, `engram`, `hippocampus_guide` | `HIPPOCAMPUS/SYNAPSE.md`, `HIPPOCAMPUS/ENGRAM.md`, `HIPPOCAMPUS/HIPPOCAMPUS.md` | Where the hippocampus files and their templates live, relative to `CORTEX.md` |
-| `layout.memory`, `personal`, `personal_map` | `MEMORY/`, `CEREBELLUM/`, `CEREBELLUM/MAP.md` | Memory areas and the personal layer; with the guide, they seed the protected list |
+| `layout.router`, `memory`, `personal`, `projects` | `NEOCORTEX/NEOCORTEX.md`, `NEOCORTEX/`, `PREFRONTAL/`, `PREFRONTAL/PROJECTS/` | The router, memory areas, personal layer (its files' `##` sections are the personal index) and projects; with the guide, they seed the protected list (`!` + projects exempts project hubs) |
 | `audit.script`, `timeout_seconds` | `scripts/check_brain.py`, 60 | The brain's audit for "check the brain" (empty: built-in checks) |
 | `setup.template_repo` | `jimmydagher/claude-brain` | GitHub `owner/repo` the wizard downloads |
 | `setup.download_timeout_seconds`, `max_download_bytes` | 60, 50 MB | Template download limits |

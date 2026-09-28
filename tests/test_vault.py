@@ -26,25 +26,25 @@ def test_parse_tags_links_and_headings_skip_code() -> None:
 
 def test_table_escaped_pipe_link() -> None:
     # Regression: claude-brain's routing table escapes the alias pipe as \|.
-    parsed = parse_note("| [[MEMORY/CODING\\|CODING]] | [[CEREBELLUM/STYLE#CODING\\|STYLE › CODING]] |")
-    assert parsed.links == ["MEMORY/CODING", "CEREBELLUM/STYLE"]
-    assert parsed.anchors == [("CEREBELLUM/STYLE", "CODING")]
+    parsed = parse_note("| [[NEOCORTEX/CODING\\|CODING]] | [[PREFRONTAL/STYLE#CODING\\|STYLE › CODING]] |")
+    assert parsed.links == ["NEOCORTEX/CODING", "PREFRONTAL/STYLE"]
+    assert parsed.anchors == [("PREFRONTAL/STYLE", "CODING")]
 
 
 def test_dead_heading_links_are_reported(config: Config) -> None:
     # Regression (brain audit parity): [[note#Heading]] to a missing heading is a dead link.
     dead = make_vault(config).dead_links()
-    assert {"source": "PROJECTS/Acme/ACME.md", "target": "MEMORY/WRITING#Nope"} in dead
-    assert not any(item["target"] in ("MEMORY/WRITING#Avoid", "#Now") for item in dead)
-    assert not any(item["source"] == "CEREBELLUM/MAP.md" for item in dead)
+    assert {"source": "PREFRONTAL/PROJECTS/Acme/ACME.md", "target": "NEOCORTEX/WRITING#Nope"} in dead
+    assert not any(item["target"] in ("NEOCORTEX/WRITING#Avoid", "#Now") for item in dead)
+    assert not any(item["source"] in ("PREFRONTAL/PERSONA.md", "PREFRONTAL/STYLE.md") for item in dead)
 
 
 def test_rename_heading_plan_updates_every_link_form(config: Config) -> None:
-    plan = make_vault(config).rename_heading_plan("PROJECTS/Acme/ACME.md", "now", "Status", {})
-    assert set(plan) == {"PROJECTS/Acme/ACME.md", "PROJECTS/Acme/NOTES.md"}
-    assert "## Status" in plan["PROJECTS/Acme/ACME.md"] and "[[#Status]]" in plan["PROJECTS/Acme/ACME.md"]
-    notes = plan["PROJECTS/Acme/NOTES.md"]
-    assert "[[PROJECTS/Acme/ACME#Status|now]]" in notes and "[[ACME#Status]]" in notes
+    plan = make_vault(config).rename_heading_plan("PREFRONTAL/PROJECTS/Acme/ACME.md", "now", "Status", {})
+    assert set(plan) == {"PREFRONTAL/PROJECTS/Acme/ACME.md", "PREFRONTAL/PROJECTS/Acme/NOTES.md"}
+    assert "## Status" in plan["PREFRONTAL/PROJECTS/Acme/ACME.md"] and "[[#Status]]" in plan["PREFRONTAL/PROJECTS/Acme/ACME.md"]
+    notes = plan["PREFRONTAL/PROJECTS/Acme/NOTES.md"]
+    assert "[[PREFRONTAL/PROJECTS/Acme/ACME#Status|now]]" in notes and "[[ACME#Status]]" in notes
     assert "[[ACME#Status\\|here]]" in notes  # table-escaped pipe kept
     assert "`[[ACME#Now]]`" in notes  # code is left alone
 
@@ -52,9 +52,9 @@ def test_rename_heading_plan_updates_every_link_form(config: Config) -> None:
 def test_rename_heading_plan_refuses_missing_duplicate_and_taken(config: Config, brain_dir: Path) -> None:
     vault = make_vault(config)
     with pytest.raises(NotFoundError):
-        vault.rename_heading_plan("PROJECTS/Acme/ACME.md", "Nope", "X", {})
+        vault.rename_heading_plan("PREFRONTAL/PROJECTS/Acme/ACME.md", "Nope", "X", {})
     with pytest.raises(ConflictError):
-        vault.rename_heading_plan("MEMORY/WRITING.md", "Avoid", "output", {})
+        vault.rename_heading_plan("NEOCORTEX/WRITING.md", "Avoid", "output", {})
     (brain_dir / "TWICE.md").write_text("## A\n## A\n", encoding="utf-8")
     with pytest.raises(InvalidInputError, match="2 headings"):
         vault.rename_heading_plan("TWICE.md", "A", "B", {})
@@ -66,22 +66,22 @@ def test_scan_lines_marks_fenced_code() -> None:
 
 def test_resolve_by_path_name_and_suffix(config: Config) -> None:
     vault = make_vault(config)
-    assert vault.resolve("MEMORY/CODING") == "MEMORY/CODING.md"
-    assert vault.resolve("coding") == "MEMORY/CODING.md"
-    assert vault.resolve("Acme/ACME") == "PROJECTS/Acme/ACME.md"
+    assert vault.resolve("NEOCORTEX/CODING") == "NEOCORTEX/CODING.md"
+    assert vault.resolve("coding") == "NEOCORTEX/CODING.md"
+    assert vault.resolve("Acme/ACME") == "PREFRONTAL/PROJECTS/Acme/ACME.md"
     assert vault.resolve("Missing Note") is None
     assert vault.resolve("diagram.png") is None
 
 
 def test_graph_counts_dead_links_but_not_attachments(config: Config) -> None:
     graph = make_vault(config).graph()
-    assert {"source": "PROJECTS/Acme/ACME.md", "target": "Missing Note"} in graph["dead"]
+    assert {"source": "PREFRONTAL/PROJECTS/Acme/ACME.md", "target": "Missing Note"} in graph["dead"]
     assert not any(dead["target"] == "diagram.png" for dead in graph["dead"])
     assert not any("NOT/A/LINK" in dead["target"] for dead in graph["dead"])
-    assert {"source": "CORTEX.md", "target": "MEMORY/CODING.md"} in graph["links"]
+    assert {"source": "NEOCORTEX/NEOCORTEX.md", "target": "NEOCORTEX/CODING.md"} in graph["links"]
 
 
-@pytest.mark.parametrize("bad", ["../escape.md", ".obsidian/app", "MEMORY/../../x", "C:/Windows/x", "a/.git/config"])
+@pytest.mark.parametrize("bad", ["../escape.md", ".obsidian/app", "NEOCORTEX/../../x", "C:/Windows/x", "a/.git/config"])
 def test_safe_path_refuses_escapes(config: Config, bad: str) -> None:
     with pytest.raises(InvalidInputError):
         make_vault(config).safe_path(bad)
@@ -95,10 +95,10 @@ def test_leading_slash_is_vault_root(config: Config) -> None:
 def test_edits_must_match_exactly_once(config: Config) -> None:
     vault = make_vault(config)
     with pytest.raises(InvalidInputError, match="not found"):
-        vault.prepare("MEMORY/WRITING.md", edits=[Edit("nope", "x")])
+        vault.prepare("NEOCORTEX/WRITING.md", edits=[Edit("nope", "x")])
     with pytest.raises(InvalidInputError, match="found 2 times"):
-        vault.prepare("MEMORY/WRITING.md", edits=[Edit("## ", "### ")])
-    _, text = vault.prepare("MEMORY/WRITING.md", edits=[Edit("- Filler.", "- Filler and hedging.")])
+        vault.prepare("NEOCORTEX/WRITING.md", edits=[Edit("## ", "### ")])
+    _, text = vault.prepare("NEOCORTEX/WRITING.md", edits=[Edit("- Filler.", "- Filler and hedging.")])
     assert "- Filler and hedging." in text
 
 

@@ -2,7 +2,7 @@
 tags:
   - memory/communication
 ---
-> Scope: general questions, advice and anything no other area file covers · Pairs with: [[CORTEX]]
+> Scope: general questions, advice and anything no other area file covers · Index: [[NEOCORTEX/NEOCORTEX|NEOCORTEX]]
 
 ## Core Rules
 

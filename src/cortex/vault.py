@@ -1,6 +1,6 @@
 """The brain on disk: notes, tags, wikilinks, and path-safe reads and writes.
 
-Every path the rest of the app handles is vault-relative POSIX (`MEMORY/CODING.md`).
+Every path the rest of the app handles is vault-relative POSIX (`NEOCORTEX/CODING.md`).
 Link resolution follows Obsidian: exact path, then relative to the linking note,
 then the shortest path whose tail matches, so any folder layout works.
 """
@@ -73,7 +73,7 @@ def normalize_path(text: str) -> str:
     """Turn user input into a vault-relative POSIX path fragment.
 
     Args:
-        text: a path as typed or sent by a client (`\\MEMORY\\CODING`, `/MEMORY/CODING.md`).
+        text: a path as typed or sent by a client (`\\NEOCORTEX\\CODING`, `/NEOCORTEX/CODING.md`).
 
     Returns:
         The same path with forward slashes and no leading slash or surrounding spaces.
@@ -153,11 +153,11 @@ def link_target(raw: str) -> str:
     """The note a wikilink points at.
 
     Args:
-        raw: the text inside `[[...]]`, e.g. `MEMORY/CODING#Rules|CODING` or the
-            table-escaped `MEMORY/CODING\\|CODING`.
+        raw: the text inside `[[...]]`, e.g. `NEOCORTEX/CODING#Rules|CODING` or the
+            table-escaped `NEOCORTEX/CODING\\|CODING`.
 
     Returns:
-        The target without alias or heading, e.g. `MEMORY/CODING`.
+        The target without alias or heading, e.g. `NEOCORTEX/CODING`.
     """
     return raw.split("|", 1)[0].rstrip("\\").split("#", 1)[0].strip()
 
@@ -166,7 +166,7 @@ def link_heading(raw: str) -> str:
     """The heading a wikilink points at.
 
     Args:
-        raw: the text inside `[[...]]`, e.g. `CEREBELLUM/STYLE#CODING|STYLE › CODING`.
+        raw: the text inside `[[...]]`, e.g. `PREFRONTAL/STYLE#CODING|STYLE › CODING`.
 
     Returns:
         The heading (`CODING`), or "" when there is none or it's a block reference (`#^id`).
@@ -256,6 +256,24 @@ def section(text: str, heading: str) -> str | None:
         elif start is not None and level is not None and len(match.group(1)) <= level:
             return "\n".join(lines[start:index]).rstrip() + "\n"
     return "\n".join(lines[start:]).rstrip() + "\n" if start is not None else None
+
+
+def headings(text: str, level: int) -> list[str]:
+    """A note's headings of one level, in order, ignoring frontmatter and code.
+
+    Args:
+        text: the whole note.
+        level: 1 for `#`, 2 for `##`, and so on.
+
+    Returns:
+        The heading texts as written, each once.
+    """
+    found = []
+    for _, line, skip in text_lines(text.replace("\r\n", "\n")):
+        match = None if skip else HEADING.match(line)
+        if match and len(match.group(1)) == level:
+            found.append(match.group(2).strip())
+    return list(dict.fromkeys(found))
 
 
 def apply_edits(text: str, edits: list[Edit], label: str) -> str:
@@ -360,7 +378,7 @@ class Vault:
         """Resolve a wikilink target or path to a note the way Obsidian does.
 
         Args:
-            target: `MEMORY/CODING`, `CODING`, `Acme/ACME.md`...
+            target: `NEOCORTEX/CODING`, `CODING`, `Acme/ACME.md`...
             source: the linking note, for relative links.
 
         Returns:

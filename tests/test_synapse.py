@@ -21,10 +21,10 @@ def hippocampus(config: Config) -> Hippocampus:
 
 
 def test_queue_writes_entry_and_bumps_next_id(hippocampus: Hippocampus, brain_dir: Path) -> None:
-    entry = hippocampus.queue("MEMORY/WRITING › Avoid", "Cut hedging · always", "recurs\nin drafts", "correction", DAY)
+    entry = hippocampus.queue("NEOCORTEX/WRITING › Avoid", "Cut hedging · always", "recurs\nin drafts", "correction", DAY)
     assert entry.id == "HX0002"
     text = (brain_dir / "HIPPOCAMPUS/SYNAPSE.md").read_text(encoding="utf-8")
-    assert "- [ ] HX0002 · 2026-09-27 · → MEMORY/WRITING › Avoid · Cut hedging ; always · recurs in drafts · correction" in text
+    assert "- [ ] HX0002 · 2026-09-27 · → NEOCORTEX/WRITING › Avoid · Cut hedging ; always · recurs in drafts · correction" in text
     assert "Next ID: HX0003" in text
     assert text.index("<!-- Format") < text.index("- [ ] HX0002")
     assert hippocampus.queue("X", "second", "why", "pref", DAY).id == "HX0003"
@@ -37,8 +37,8 @@ def test_next_id_skips_ids_already_in_engram(hippocampus: Hippocampus, brain_dir
 
 
 def test_approve_unapprove_and_list(hippocampus: Hippocampus) -> None:
-    hippocampus.queue("MEMORY/CODING › Core Rules", "one", "w", "s", DAY)
-    hippocampus.queue("MEMORY/CODING › Core Rules", "two", "w", "s", DAY)
+    hippocampus.queue("NEOCORTEX/CODING › Core Rules", "one", "w", "s", DAY)
+    hippocampus.queue("NEOCORTEX/CODING › Core Rules", "two", "w", "s", DAY)
     hippocampus.set_approved("hx0002", True)
     assert {entry.id: entry.status for entry in hippocampus.entries()} == {"HX0002": EntryStatus.APPROVED, "HX0003": EntryStatus.PENDING}
     with pytest.raises(ConflictError, match="already approved"):
@@ -48,13 +48,13 @@ def test_approve_unapprove_and_list(hippocampus: Hippocampus) -> None:
 
 
 def test_commit_moves_to_top_of_trail(hippocampus: Hippocampus) -> None:
-    hippocampus.queue("MEMORY/WRITING › Avoid", "Cut hedging", "w", "correction", date(2026, 9, 26))
+    hippocampus.queue("NEOCORTEX/WRITING › Avoid", "Cut hedging", "w", "correction", date(2026, 9, 26))
     hippocampus.set_approved("HX0002", True)
     hippocampus.commit("HX0002", "", "hedging joins the Avoid list", DAY)
     assert hippocampus.entries() == []
     trail = hippocampus.trail()
     assert [entry.id for entry in trail] == ["HX0002", "HX0001"]
-    assert trail[0].raw == "- [x] HX0002 · proposed 2026-09-26 · committed 2026-09-27 · landed in MEMORY/WRITING › Avoid · hedging joins the Avoid list"
+    assert trail[0].raw == "- [x] HX0002 · proposed 2026-09-26 · committed 2026-09-27 · landed in NEOCORTEX/WRITING › Avoid · hedging joins the Avoid list"
     with pytest.raises(ConflictError, match="already committed"):
         hippocampus.get("HX0002")
 

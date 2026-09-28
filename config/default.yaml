@@ -48,16 +48,19 @@ vault:
   scan_ttl_seconds: 2
 
 # Where the brain's parts sit, relative to its CORTEX.md. Used when setup can't find
-# SYNAPSE/ENGRAM, to seed the protected list, and to load the personal layer.
+# SYNAPSE/ENGRAM, to seed the protected list, and to load the router and personal layer.
 layout:
   synapse: HIPPOCAMPUS/SYNAPSE.md
   engram: HIPPOCAMPUS/ENGRAM.md
   # The guide holding SYNAPSE's and ENGRAM's templates, used when either file is missing.
   hippocampus_guide: HIPPOCAMPUS/HIPPOCAMPUS.md
-  memory: MEMORY/
-  # The human-owned personal layer and the map of which sections each area loads.
-  personal: CEREBELLUM/
-  personal_map: CEREBELLUM/MAP.md
+  # The router cortex_load returns with CORTEX.md: the memory areas' index.
+  router: NEOCORTEX/NEOCORTEX.md
+  memory: NEOCORTEX/
+  # All personal memory (protected); the ## sections of its top-level files are the personal index.
+  personal: PREFRONTAL/
+  # Projects inside it (exempt: hubs are written directly); the list is the note named like the folder.
+  projects: PREFRONTAL/PROJECTS/
 
 # "check the brain": the brain's own read-only audit script, relative to its CORTEX.md
 # (empty uses Cortex's built-in link and ID checks instead).

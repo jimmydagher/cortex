@@ -39,7 +39,7 @@ def base_url(tmp_path: Path, brain_dir: Path) -> Iterator[str]:
     logger = Logger(config.logging, config.paths.logs)
     app = create_app(config, logger, Secrets(config.secrets), ErrorHandler())
     app.state.brain.configure("CORTEX.md")
-    app.state.brain.queue_entry("test", "MEMORY/WRITING › Avoid", "Cut hedging", "recurs", "correction")
+    app.state.brain.queue_entry("test", "NEOCORTEX/WRITING › Avoid", "Cut hedging", "recurs", "correction")
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_config=None, access_log=False))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
@@ -65,9 +65,9 @@ def sign_in(page: Page, base_url: str) -> None:
 def test_sign_in_and_open_a_note_from_search(page: Page, base_url: str) -> None:
     sign_in(page, base_url)
     expect(page.locator("#stats")).to_contain_text("notes")
-    page.fill("#graph-search", "MEMORY/CODING.md")
+    page.fill("#graph-search", "NEOCORTEX/CODING.md")
     page.press("#graph-search", "Enter")
-    expect(page.locator("#note-path")).to_have_text("MEMORY/CODING.md")
+    expect(page.locator("#note-path")).to_have_text("NEOCORTEX/CODING.md")
     expect(page.locator("#note-tags")).to_contain_text("protected")
 
 

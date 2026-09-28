@@ -3,7 +3,7 @@
 Every line goes through a bounded queue to one background writer, so a slow disk never
 blocks a request. Three kinds of line share one format:
 
-  2026-09-26T15:50:43-05:00 INFO    req=4f2a91c07b3e [laptop] commit: HX0002 → MEMORY/WRITING.md
+  2026-09-26T15:50:43-05:00 INFO    req=4f2a91c07b3e [laptop] commit: HX0002 → NEOCORTEX/WRITING.md
   2026-09-26T15:50:43-05:00 INFO    req=4f2a91c07b3e (access) POST /mcp 200 14ms
   2026-09-26T15:50:43-05:00 WARNING req=- (uvicorn.error) message from a library logger
 

@@ -10,6 +10,9 @@ const ALPHA_DECAY = 0.0228;
 const ALPHA_MIN = 0.004;
 const GOLDEN_ANGLE = 2.399963;
 const HUB_DEGREE = 6;
+// The brain's entry point (CORTEX.md): a soft orange glow and a dark yellow label.
+const ENTRY_GLOW = "rgba(255, 140, 40, 0.22)";
+const ENTRY_LABEL = "#b8860b";
 
 const GRAPH_DEFAULTS = Object.freeze({
   // Filters: which notes are drawn.
@@ -116,7 +119,10 @@ class BrainGraph {
   }
 
   _sizeNodes() {
-    for (const node of this.nodes) node.radius = (4 + Math.sqrt(node.degree) * 2.2) * this.settings.nodeSize;
+    for (const node of this.nodes) {
+      node.radius = (4 + Math.sqrt(node.degree) * 2.2) * this.settings.nodeSize;
+      if (node.entry) node.radius = Math.max(node.radius * 1.5, 9 * this.settings.nodeSize); // the brain's entry point stands out
+    }
   }
 
   /* Recompute which notes and links are drawn and simulated. */
@@ -296,6 +302,12 @@ class BrainGraph {
 
     for (const node of this.visibleNodes) {
       context.globalAlpha = lit(node.id) ? 1 : 0.2;
+      if (node.entry) { // a soft orange glow; the fill keeps the note's own color
+        context.fillStyle = ENTRY_GLOW;
+        context.beginPath();
+        context.arc(node.x, node.y, node.radius * 1.9, 0, Math.PI * 2);
+        context.fill();
+      }
       context.fillStyle = node.color || this.colors.node;
       context.beginPath();
       context.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
@@ -314,11 +326,12 @@ class BrainGraph {
     context.textBaseline = "top";
     context.fillStyle = this.colors.label;
     for (const node of this.visibleNodes) {
-      const show = settings.labels || view.scale > settings.textFade || node.id === focusId || (near && near.has(node.id))
+      const show = node.entry || settings.labels || view.scale > settings.textFade || node.id === focusId || (near && near.has(node.id))
         || (node.degree >= HUB_DEGREE && view.scale > settings.textFade / 2);
       if (!show) continue;
       context.globalAlpha = lit(node.id) ? 0.95 : 0.15;
-      context.fillText(node.label, node.x, node.y + node.radius + 3 / view.scale);
+      context.fillStyle = node.entry ? ENTRY_LABEL : this.colors.label;
+      context.fillText(node.label, node.x, node.y + (node.entry ? node.radius * 1.9 : node.radius) + 3 / view.scale);
     }
     context.restore();
     context.globalAlpha = 1;

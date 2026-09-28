@@ -90,9 +90,10 @@ class LayoutConfig(_Section):
     synapse: str = Field(min_length=1)
     engram: str = Field(min_length=1)
     hippocampus_guide: str = Field(min_length=1)
+    router: str = Field(min_length=1)
     memory: str = Field(min_length=1)
     personal: str = Field(min_length=1)
-    personal_map: str = Field(min_length=1)
+    projects: str = Field(min_length=1)
 
 
 class AuditConfig(_Section):

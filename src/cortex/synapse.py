@@ -1,8 +1,8 @@
 """The hippocampus: SYNAPSE holds proposals, ENGRAM keeps the trail.
 
 File formats match the claude-brain convention (CORTEX › Brain Upkeep):
-  SYNAPSE  - [ ] HX0002 · 2026-09-26 · → MEMORY/WRITING › Avoid · change · why · source
-  ENGRAM   - [x] HX0001 · proposed D · committed D · landed in MEMORY/X › Section · summary
+  SYNAPSE  - [ ] HX0002 · 2026-09-26 · → NEOCORTEX/WRITING › Avoid · change · why · source
+  ENGRAM   - [x] HX0001 · proposed D · committed D · landed in NEOCORTEX/X › Section · summary
            - [-] HX0002 · proposed D · rejected D · summary · reason
 Entries under SYNAPSE's `## Approved` heading were approved in the GUI and wait
 for the AI to write them into memory. Every mutation re-reads the files under a lock.
@@ -42,7 +42,7 @@ tags:
 Next ID: HX0001
 
 ## Pending
-<!-- Format: - [ ] HX0001 · YYYY-MM-DD · → MEMORY/FILE › Section · proposed change · why · source (correction, preference, research) -->
+<!-- Format: - [ ] HX0001 · YYYY-MM-DD · → NEOCORTEX/FILE › Section · proposed change · why · source (correction, preference, research) -->
 """
 
 ENGRAM_TEMPLATE = """---
@@ -52,7 +52,7 @@ tags:
 > Trail of evaluated SYNAPSE entries, newest first: `[x]` committed, `[-]` rejected so it isn't proposed again. Search it; don't load it whole.
 
 ## Trail
-<!-- Committed: - [x] HX0001 · proposed YYYY-MM-DD · committed YYYY-MM-DD · landed in MEMORY/FILE › Section · summary -->
+<!-- Committed: - [x] HX0001 · proposed YYYY-MM-DD · committed YYYY-MM-DD · landed in NEOCORTEX/FILE › Section · summary -->
 <!-- Rejected: - [-] HX0002 · proposed YYYY-MM-DD · rejected YYYY-MM-DD · summary · reason -->
 """
 
@@ -91,7 +91,7 @@ class Entry:
         """A short description for logs and listings.
 
         Returns:
-            `HX0002 · → MEMORY/WRITING › Avoid · change`.
+            `HX0002 · → NEOCORTEX/WRITING › Avoid · change`.
         """
         return f"{self.id} · {self.target or TARGET_ARROW + ' ?'} · {self.change}"
 
@@ -348,7 +348,7 @@ class Hippocampus:
         """Add a pending entry under the next ID and bump `Next ID`.
 
         Args:
-            target: where it would land, e.g. `MEMORY/WRITING › Avoid`.
+            target: where it would land, e.g. `NEOCORTEX/WRITING › Avoid`.
             change: the proposed change.
             why: why it matters.
             source: correction, preference or research.

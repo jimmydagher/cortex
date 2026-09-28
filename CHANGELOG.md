@@ -16,7 +16,24 @@ All notable changes, newest first. See `VERSION` for the current release.
 ### Bug/Issues/Fixes
 (none)
 
-## 🆕VERSION 0.2.3 📅 2026-09-28
+## 🆕VERSION 0.2.4 📅 2026-09-28
+
+### Added or New Features
+- Protected paths accept `!` exemptions; project hubs under `PREFRONTAL/PROJECTS/` stay writable inside the protected personal layer.
+- The graph highlights the brain's entry point: `CORTEX.md` is drawn larger, with a dark yellow label and a soft orange glow; its color still comes from `.obsidian/graph.json` (claude-brain paints it red). `/api/graph` nodes carry `entry`.
+- "check the brain" warns when the memory or personal folder, or the router, isn't in the protected list.
+
+### Removed
+(none)
+
+### Changed
+- The brain layout follows claude-brain's anatomy: memory areas in `NEOCORTEX/` with their index `NEOCORTEX/NEOCORTEX.md` as the router, and all personal memory in `PREFRONTAL/` (config `layout.*`: new keys `router` and `projects`, `personal_map` removed). Operator: after upgrading, set Settings › Protected to the new defaults (see README); a list saved before still names `MEMORY/` and `CEREBELLUM/`.
+- `cortex_load` returns CORTEX.md, the router (NEOCORTEX/NEOCORTEX.md) and the personal layer in one call. The personal index is built from the `##` headings of the files in `PREFRONTAL/` (a `## CODING` section loads for coding tasks, `## Always` every session) instead of a hand-kept map, and the project list is named when it exists.
+
+### Bug/Issues/Fixes
+(none)
+
+## 🟦VERSION 0.2.3 📅 2026-09-28
 
 ### Added or New Features
 - Graph options, like Obsidian's graph settings: an **Options** panel on the Brain tab with filters (search, show orphans, local graph around the selected note with a depth), display settings (node size, link thickness and opacity, arrows, labels, the zoom at which labels appear, dimming on hover) and forces (center, repel, link force, link distance), plus Reset. Legend entries now show or hide their color group. Settings are remembered in the browser.

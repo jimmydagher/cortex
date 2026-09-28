@@ -6,6 +6,7 @@ shaping the result. Activity is logged here, once, whichever door the call came 
 """
 from __future__ import annotations
 
+import dataclasses
 import os
 import subprocess
 import sys
@@ -32,9 +33,9 @@ from .errors import (
 from .logs import Logger
 from .state import Power, State, now_utc
 from .synapse import Entry, EntryStatus, Hippocampus
-from .vault import WIKILINK, Edit, Vault, apply_edits, link_heading, link_target, normalize_path, section
+from .vault import Edit, Vault, apply_edits, headings, normalize_path, section
 
-ALWAYS_SECTION = "Always"  # the personal map's heading for sections every task loads
+ALWAYS_SECTION = "Always"  # the personal files' heading for sections every task loads
 AUDIT_OUTPUT_CHARS = 20_000
 
 
@@ -86,7 +87,7 @@ class NoteRead:
 
 @dataclass(frozen=True)
 class Overview:
-    """What cortex_load needs: the routing file, the personal layer's map and the hippocampus."""
+    """What cortex_load needs: CORTEX, the router, the personal layer's index and the hippocampus."""
 
     cortex_path: str
     engram_path: str
@@ -94,10 +95,13 @@ class Overview:
     pending: int
     approved: list[Entry]
     text: str
-    personal_map_path: str = ""
-    personal_map: str = ""  # empty when the brain has no personal layer
-    always: list[NoteRead] = field(default_factory=list)  # the map's `Always` sections
-    missing: list[str] = field(default_factory=list)  # map links that don't resolve
+    router_path: str = ""  # empty when the brain has no router file
+    router: str = ""
+    # The personal layer's `##` sections by heading, e.g. {"CODING": ["PREFRONTAL/STYLE.md#CODING"]};
+    # empty when the brain has no personal files.
+    personal_sections: dict[str, list[str]] = field(default_factory=dict)
+    always: list[NoteRead] = field(default_factory=list)  # the personal files' `Always` sections
+    projects_path: str = ""  # the project list, empty when the brain has none
 
 
 @dataclass
@@ -177,9 +181,10 @@ class Brain:
             cortex_path: the CORTEX.md path inside the brain folder.
             synapse_path: SYNAPSE's path; found near CORTEX.md or from layout.synapse when omitted.
             engram_path: ENGRAM's path; found or from layout.engram when omitted.
-            protected: protected paths; when omitted, CORTEX.md, the memory areas, the personal
-                layer and the HIPPOCAMPUS guide (config `layout`), whether or not they exist yet,
-                so a folder created later is protected from the start.
+            protected: protected paths; when omitted, CORTEX.md, the memory areas (which hold the
+                router), the personal layer and the HIPPOCAMPUS guide (config `layout`), plus an
+                exemption for projects, whether or not they exist yet, so a folder created later is
+                protected from the start.
 
         Raises:
             NotFoundError: there's no file at cortex_path.
@@ -195,7 +200,10 @@ class Brain:
         engram = self.vault.safe_path(engram_path or self._find("ENGRAM", base) or base + layout.engram)[0]
         guide = self._layout_path(layout.hippocampus_guide, home)
         if protected is None:
-            protected = [cortex, base + layout.memory, base + layout.personal, guide]
+            protected = [cortex, base + layout.memory, base + layout.personal, guide, "!" + base + layout.projects]
+            router = base + layout.router
+            if not router.lower().startswith((base + layout.memory).lower()):
+                protected.insert(1, router)  # a router outside the memory folder needs its own rule
         self.state.update(
             cortex_path=cortex, synapse_path=synapse, engram_path=engram,
             protected=[normalize_path(path) for path in protected if path.strip()],
@@ -237,6 +245,10 @@ class Brain:
         """
         return relative.lower() in (self.hippocampus.synapse_path.lower(), self.hippocampus.engram_path.lower())
 
+    @staticmethod
+    def _rule_matches(rule: str, lowered: str) -> bool:
+        return (rule.endswith("/") and lowered.startswith(rule)) or lowered in (rule, rule + ".md")
+
     def is_protected(self, relative: str) -> bool:
         """Whether a note changes only through an approved SYNAPSE commit.
 
@@ -244,13 +256,15 @@ class Brain:
             relative: a vault path.
 
         Returns:
-            True when a protected rule matches (a trailing `/` protects a folder), or for the hippocampus.
+            True when a protected rule matches (a trailing `/` protects a folder) and no `!` rule
+            exempts it, or for the hippocampus, which no exemption reaches.
         """
         lowered = relative.lower()
-        for rule in self.state.get("protected"):
-            rule = rule.lower()
-            if (rule.endswith("/") and lowered.startswith(rule)) or lowered in (rule, rule + ".md"):
-                return True
+        rules = [rule.lower() for rule in self.state.get("protected")]
+        if any(self._rule_matches(rule[1:], lowered) for rule in rules if rule.startswith("!")):
+            return self.is_hippocampus(relative)
+        if any(self._rule_matches(rule, lowered) for rule in rules if not rule.startswith("!")):
+            return True
         return self.is_hippocampus(relative)
 
     # ---------- status and reads ----------
@@ -281,10 +295,10 @@ class Brain:
         }
 
     def overview(self, who: str) -> Overview:
-        """The routing file, the personal layer's map with its `Always` sections, and hippocampus counts.
+        """The routing files (CORTEX and the router), the personal layer's index and `Always` sections, and hippocampus counts.
 
-        CORTEX asks for the personal map to be read once right after it, so loading returns
-        both in one call. A brain without a personal layer simply has no map.
+        CORTEX asks for the router and the personal `Always` sections to load with it, so loading
+        returns them in one call. A brain without a router or personal files simply has none.
 
         Args:
             who: the actor, for the activity log.
@@ -294,14 +308,14 @@ class Brain:
         """
         self.require_configured()
         entries = self.hippocampus.entries()
-        map_path = self._layout_path(self.config.layout.personal_map, self._home(self.cortex_path))
-        personal_map = ""
-        always: list[NoteRead] = []
-        missing: list[str] = []
-        if self.vault.exists(map_path):
-            personal_map = self.vault.read(map_path)
-            always, missing = self._map_sections(map_path, personal_map, ALWAYS_SECTION)
-        self.logger.event(who, "load", self.cortex_path + (f" + {map_path}" if personal_map else ""))
+        home = self._home(self.cortex_path)
+        router_path = self._layout_path(self.config.layout.router, home)
+        router = self.vault.read(router_path) if self.vault.exists(router_path) else ""
+        personal_sections, always = self._personal_index(home)
+        projects = self._layout_path(self.config.layout.projects, home).rstrip("/")
+        projects_path = f"{projects}/{PurePosixPath(projects).name}.md"
+        loaded = (self.cortex_path, router_path if router else "", f"{len(always)} Always sections" if always else "")
+        self.logger.event(who, "load", " + ".join(part for part in loaded if part))
         return Overview(
             cortex_path=self.cortex_path,
             engram_path=self.hippocampus.engram_path,
@@ -309,46 +323,48 @@ class Brain:
             pending=sum(entry.status == EntryStatus.PENDING for entry in entries),
             approved=[entry for entry in entries if entry.status == EntryStatus.APPROVED],
             text=self.vault.read(self.cortex_path),
-            personal_map_path=map_path if personal_map else "",
-            personal_map=personal_map,
+            router_path=router_path if router else "",
+            router=router,
+            personal_sections=personal_sections,
             always=always,
-            missing=missing,
+            projects_path=projects_path if self.vault.exists(projects_path) else "",
         )
 
-    def _map_sections(self, map_path: str, map_text: str, area: str) -> tuple[list[NoteRead], list[str]]:
-        """Read the sections a personal map lists under one area heading.
+    def _personal_index(self, home: str) -> tuple[dict[str, list[str]], list[NoteRead]]:
+        """Index the personal layer by its files' `##` headings, so no hand-kept list goes stale.
+
+        The personal files sit directly in the personal folder (config `layout.personal`); its
+        guide (the note named like the folder) and subfolders such as projects are left out.
 
         Args:
-            map_path: the map's vault path (links resolve relative to it).
-            map_text: the map's text.
-            area: the map heading, e.g. `Always` or `CODING`.
+            home: the folder holding CORTEX.md.
 
         Returns:
-            (sections read, links that don't resolve to a note and heading).
+            (section paths by heading, e.g. {"CODING": ["PREFRONTAL/STYLE.md#CODING"]}, the `Always` sections read).
         """
-        listed = section(map_text, area)
-        if listed is None:
-            return [], []
-        found, missing = [], []
-        for raw in WIKILINK.findall(listed):
-            target, heading = link_target(raw), link_heading(raw)
-            relative = self.vault.resolve(target, map_path) if target else None
-            text = self.vault.read(relative) if relative else None
-            part = section(text, heading) if text is not None and heading else text
-            if relative is None or part is None:
-                missing.append(f"{target}#{heading}" if heading else target)
+        folder = PurePosixPath(self._layout_path(self.config.layout.personal, home).rstrip("/"))
+        guide = f"{folder}/{folder.name}.md".lower()
+        by_heading: dict[str, list[str]] = {}
+        always: list[NoteRead] = []
+        for relative, note in sorted(self.vault.notes().items()):
+            if PurePosixPath(relative).parent != folder or relative.lower() == guide:
                 continue
-            note = self.vault.notes().get(relative)
-            label = f"{relative}#{heading}" if heading else relative
-            found.append(NoteRead(label, note.tags if note else [], self.is_protected(relative), part))
-        return found, missing
+            text = self.vault.read(relative)
+            for heading in headings(text, 2):
+                if heading.lower() != ALWAYS_SECTION.lower():
+                    by_heading.setdefault(heading, []).append(f"{relative}#{heading}")
+                    continue
+                part = section(text, heading)
+                if part is not None:
+                    always.append(NoteRead(f"{relative}#{heading}", note.tags, self.is_protected(relative), part))
+        return by_heading, always
 
     def read_note(self, who: str, target: str, heading: str = "") -> NoteRead:
         """Read a note by path, name or wikilink target, or one section of it.
 
         Args:
             who: the actor, for the activity log.
-            target: `MEMORY/CODING`, `CODING`...; empty reads the routing file.
+            target: `NEOCORTEX/CODING`, `CODING`...; empty reads the routing file.
             heading: optional heading whose section alone is returned.
 
         Returns:
@@ -370,6 +386,17 @@ class Brain:
         note = self.vault.notes().get(relative)
         self.logger.event(who, "read", relative + (f"#{heading}" if heading else ""))
         return NoteRead(relative, note.tags if note else [], self.is_protected(relative), text)
+
+    def graph(self) -> dict[str, Any]:
+        """The brain as a graph for the GUI, with its entry point marked.
+
+        Returns:
+            The vault's graph; each node carries `entry`, true only for the configured CORTEX.md.
+        """
+        graph = self.vault.graph()
+        for node in graph["nodes"]:
+            node["entry"] = node["id"] == self.cortex_path
+        return graph
 
     def note_view(self, target: str) -> dict[str, Any]:
         """A note with its links in both directions, for the GUI's reader.
@@ -586,6 +613,9 @@ class Brain:
             report = self._run_audit_script(script)
         else:
             report = self._built_in_audit()
+        gaps = self._protection_gaps()
+        if gaps:
+            report = dataclasses.replace(report, output="\n".join([report.output, *gaps]))
         self.logger.event(who, "check the brain", f"{report.source}: {'passed' if report.passed else 'problems found'}")
         return report
 
@@ -615,6 +645,20 @@ class Brain:
         summary = f"{len(problems)} problems" if problems else "no problems"
         return AuditReport("built-in checks (dead links, dead heading links, SYNAPSE IDs)", not problems,
                            "\n".join([*problems, summary]))
+
+    def _protection_gaps(self) -> list[str]:
+        """Warnings for layout paths no protected rule covers (a list saved before the layout moved)."""
+        home = self._home(self.cortex_path)
+        layout = self.config.layout
+        gaps = []
+        for folder in (layout.memory, layout.personal):
+            path = self._layout_path(folder, home)
+            if not self.is_protected(path.rstrip("/") + "/probe.md"):
+                gaps.append(path)
+        router = self._layout_path(layout.router, home)
+        if not self.is_protected(router) and not any(router.startswith(folder) for folder in gaps):
+            gaps.append(router)
+        return [f"warning: {path} isn't protected: add it to Settings › Protected" for path in gaps]
 
     def reject_entry(self, who: str, entry_id: str, reason: str) -> Entry:
         """Reject an entry into ENGRAM with the reason.
