@@ -6,10 +6,11 @@ MCP server and web GUI that serve a Markdown second brain (routed by `CORTEX.md`
 
 - Language: Python 3.14 (pip + venv; no pyproject.toml)
 - Project type: web (Starlette routes serving the GUI and a JSON API, plus the MCP endpoint at `/mcp`)
-- Deploy target: container on the owner's NAS (docker compose), image built once by CI and pulled from GHCR
+- Deploy target: container on the owner's NAS (docker compose), image built on the NAS through the `synology` Docker context (like flammeau and life-dashboard); no registry
 
 ## Deliberate deviations from SDSI
 
+- **The image is built on the NAS, not once by CI and promoted by tag.** `deploy-nas.ps1` builds from the working copy through the `synology` Docker context, the same way flammeau and life-dashboard do (owner's choice). CI only runs checks. Each version stays tagged on the NAS, so `-Version` rolls back without a registry.
 - **Single-process state.** The GUI login lockout (`web.Sessions.failures`) and API keys' last-used times live in process memory. Cortex runs as one process on one NAS; revisit only if it's ever scaled out (web companion: stateless handlers).
 - **The SDK's DNS-rebinding check is off.** `web.HostCheck` validates the Host header once for every route, `/mcp` included, against `server.allowed_hosts`; the MCP SDK's own copy would be a second, disagreeing list.
 - **Health probes aren't access-logged.** `/healthz` is hit every 30 s by Docker; logging it would drown the access lines.

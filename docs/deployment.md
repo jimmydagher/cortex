@@ -1,6 +1,6 @@
 # Ship a change
 
-How a change goes from your machine to the NAS. One image per version, built once by CI; the NAS pulls it by tag and never rebuilds.
+How a change goes from your machine to the NAS. Like flammeau and life-dashboard, the NAS builds the image itself from your working copy, through the `synology` Docker context; there's no registry and nothing to wait for on GitHub.
 
 ## 1. Make the change
 
@@ -11,7 +11,7 @@ git switch -c my-change
 python scripts/python/check.py
 ```
 
-Open a pull request. CI runs lint, type-check, tests, the vulnerability scan, the changelog check (a code change needs an Unreleased bullet) and a Docker build.
+Pull requests and pushes to `main` run CI: lint, type-check, tests, the vulnerability scan and the changelog check (a code change needs an Unreleased bullet). CI doesn't build or publish anything, and deploying doesn't wait for it.
 
 ## 2. Release it
 
@@ -29,26 +29,24 @@ The commit message becomes `VERSION x.y.z` (or `VERSION x.y.z-updated` for a doc
 
 The GitHub merge button skips the hooks: CI's `--main` check then fails the push, because the commit isn't a version line.
 
-## 3. CI publishes the image
+## 3. Update the NAS
 
-On a push to `main`, CI builds `ghcr.io/jimmydagher/cortex:<VERSION>` for amd64 and arm64 and pushes it, unless that tag already exists (a docs-only release reuses the current image).
-
-## 4. Update the NAS
-
-Read the version's `CHANGELOG.md` entry first: a MINOR or MAJOR release may need a new config key or secret. Once CI has published the tag:
+Read the version's `CHANGELOG.md` entry first: a MINOR or MAJOR release may need a new config key or secret. Then, right after the release commit:
 
 ```powershell
 # dev machine, PowerShell, repo root, on main after the release commit
 .\scripts\ps1\deploy-nas.ps1
 ```
 
-It deploys the version in `VERSION`: pull, config upload, pre-flight, start, health check ([setup-nas.md](setup-nas.md) › Deploy lists every step).
+It builds `cortex:<VERSION>` on the NAS from your working copy, then uploads the config, runs the pre-flight, starts it and checks its health ([setup-nas.md](setup-nas.md) › Deploy lists every step). Deploy from a clean `main`: the build includes whatever is in your working copy, and the script warns when there are uncommitted changes.
 
-## 5. Roll back
+## 4. Roll back
+
+Every deploy leaves its image on the NAS, tagged with its version, so going back doesn't rebuild:
 
 ```powershell
 # dev machine, PowerShell, repo root
 .\scripts\ps1\deploy-nas.ps1 -Version 0.1.0
 ```
 
-State (`/data/cortex/state.json`) and the brain are untouched by an image change.
+If that version was never built on the NAS, the script lists the ones that were; to build an older version, check out its commit and deploy without `-Version`. State (`/data/cortex/state.json`) and the brain are untouched by an image change.

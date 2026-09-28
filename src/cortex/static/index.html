@@ -13,9 +13,9 @@
   <!-- Login -->
   <section id="view-login" class="center-view" hidden>
     <form id="login-form" class="card narrow">
-      <div class="brand big"><span class="brand-mark"></span>Cortex</div>
+      <div class="brand big"><span class="brand-mark"></span>Cortex <span id="login-version" class="version" title="Running version"></span></div>
       <p class="muted">Your second brain, served over MCP.</p>
-      <label>Admin password
+      <label>Enter your passcode
         <input id="login-password" type="password" autocomplete="current-password" required autofocus>
       </label>
       <button type="submit" class="primary">Sign in</button>
@@ -84,8 +84,9 @@
             <input id="graph-search" type="search" placeholder="Find a note…" list="note-list">
             <datalist id="note-list"></datalist>
             <button id="graph-fit" class="ghost small" title="Fit graph to view">Fit</button>
-            <label class="toggle small"><input id="graph-labels" type="checkbox"> Labels</label>
+            <button id="graph-options-toggle" class="ghost small" title="Filters, display and forces" aria-expanded="false" aria-controls="graph-options">Options</button>
           </div>
+          <aside id="graph-options" class="graph-options" hidden aria-label="Graph options"></aside>
           <canvas id="graph"></canvas>
           <div class="legend" id="legend"></div>
         </div>

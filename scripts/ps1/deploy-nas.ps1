@@ -4,13 +4,14 @@
 
 .DESCRIPTION
     Operational tooling (SDSI §3), not part of the shipped application.
-    Modeled on flammeau's scripts/ps1/deploy-nas.ps1: everything runs through
-    the `synology` Docker context, so nothing is copied to the NAS by hand.
-    One deliberate difference: Cortex isn't built on the NAS. CI builds one
-    image per VERSION and pushes it to ghcr.io/jimmydagher/cortex; this pulls
-    that exact tag (sdsi:deploy, promote by tag), so the NAS runs what CI tested.
+    Modeled on flammeau's and life-dashboard's deploy-nas.ps1: everything runs
+    through the `synology` Docker context, so nothing is copied to the NAS by
+    hand, and the image is built on the NAS from this working copy (Compose
+    sends the build context over the Docker API). No registry, no CI image.
 
     Every run, idempotently:
+      0. builds the image cortex:<VERSION> on the NAS from this working copy
+         (skipped with -Version, which runs an image built earlier: rollback);
       1. creates the NAS folders from .env.nas and gives them to PUID:PGID
          (an existing brain folder's ownership is left alone);
       2. uploads config/override/nas.local.yaml as the NAS's /config/nas.yaml
@@ -21,14 +22,15 @@
          guest password only with -SetGuestPassword. Values travel over the
          SSH-tunneled Docker API on stdin and are never saved on this PC;
       4. runs `validate-config` in the real container wiring (the pre-flight);
-      5. pulls the image, starts it, and waits for /healthz to answer.
+      5. starts the image and waits for /healthz to answer.
 
     One-time prerequisites (shared with flammeau and life-dashboard): the
     `synology` Docker context and its SSH key. Plus .env.nas, copied from
     .env.nas.example. docs/setup-nas.md has the details.
 
 .PARAMETER Version
-    Image tag to deploy. Defaults to the VERSION file (CI must have published it).
+    Run the image of an earlier version, already built on the NAS by a past
+    deploy, without building (rollback). Default: build and run the VERSION file's.
 
 .PARAMETER Context
     Docker context for the NAS. Default: synology.
@@ -65,7 +67,7 @@
 .EXAMPLE
     .\scripts\ps1\deploy-nas.ps1 -PreflightOnly
 .EXAMPLE
-    .\scripts\ps1\deploy-nas.ps1 -Version 0.1.0 -ResetAdminPassword
+    .\scripts\ps1\deploy-nas.ps1 -Version 0.2.2      # roll back to an image built earlier
 .EXAMPLE
     .\scripts\ps1\deploy-nas.ps1 -SetGuestPassword
 #>
@@ -141,9 +143,10 @@ $wiring = Read-EnvFile $EnvFile
 foreach ($name in "CORTEX_DATA_PATH", "CORTEX_CONFIG_PATH", "CORTEX_LOGS_PATH", "CORTEX_SECRETS_PATH", "PUID", "PGID", "CORTEX_PORT") {
     if (-not $wiring[$name]) { throw "$EnvFile is missing $name (see .env.nas.example)." }
 }
+$rollback = [bool]$Version
 if (-not $Version) { $Version = (Get-Content (Join-Path $repoRoot "VERSION") -Raw).Trim() }
-$env:CORTEX_VERSION = $Version  # the shell wins over --env-file in compose, so -Version applies everywhere below
-$image = "ghcr.io/jimmydagher/cortex:$Version"
+$env:CORTEX_VERSION = $Version  # docker-compose.yml tags the image with it; always from VERSION or -Version
+$image = "cortex:$Version"
 $owner = "$($wiring.PUID):$($wiring.PGID)"
 
 $endpoint = docker context inspect $Context --format '{{.Endpoints.docker.Host}}' 2>$null
@@ -151,12 +154,23 @@ if ($LASTEXITCODE -ne 0 -or -not $endpoint) { throw "Docker context '$Context' n
 $nasHost = if ($endpoint -match '^ssh://(?:[^@]+@)?([^:/]+)') { $Matches[1] } else { "localhost" }
 Write-Host "Deploying Cortex $Version to $nasHost (context '$Context')" -ForegroundColor Green
 
-Write-Host "==> Pulling $image on the NAS" -ForegroundColor Cyan
-$global:LASTEXITCODE = 0
-docker --context $Context pull --quiet $image
-if ($LASTEXITCODE -ne 0) {
-    # Docker's "manifest unknown" means GHCR has no such tag: CI publishes a version only after its run on main.
-    throw "Couldn't pull $image. If Docker said 'manifest unknown', CI hasn't published $Version yet: wait for the run on main to finish (https://github.com/jimmydagher/cortex/actions), or pass -Version with a published tag."
+# ---------- 0. image ----------
+
+# Built first: the steps below run their folder and secret work in throwaway containers of it.
+if ($rollback) {
+    Write-Host "==> Using $image, built on the NAS by an earlier deploy (-Version: no build)" -ForegroundColor Cyan
+    $global:LASTEXITCODE = 0
+    docker --context $Context image inspect $image *> $null
+    if ($LASTEXITCODE -ne 0) {
+        $built = docker --context $Context image ls cortex --format '{{.Tag}}' | Sort-Object -Unique
+        throw "$image isn't on the NAS. Versions built there: $($built -join ', '). To build an older version, check out its commit and deploy without -Version."
+    }
+} else {
+    $dirty = git status --porcelain --untracked-files=no 2>$null
+    if ($dirty) { Write-Host "    Note: uncommitted changes are included in this build." -ForegroundColor Yellow }
+    Invoke-Checked "Building $image on the NAS (a few minutes on the NAS's hardware)" {
+        docker --context $Context compose --env-file $EnvFile -f $composeFile build
+    }
 }
 
 # ---------- 1. folders ----------
@@ -256,7 +270,7 @@ if ($PreflightOnly) {
 
 # Built by appending, not `$x = if (...) { @(...) }`: an if-expression unwraps a one-item array
 # into a string, which PowerShell would then pass to docker one character at a time.
-$upArgs = @("up", "-d")
+$upArgs = @("up", "-d", "--no-build")  # built (or chosen with -Version) in step 0
 if ($secretsChanged) { $upArgs += "--force-recreate" }
 Invoke-Checked "Starting Cortex $Version" {
     docker --context $Context compose --env-file $EnvFile -f $composeFile $upArgs

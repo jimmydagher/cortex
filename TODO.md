@@ -7,7 +7,6 @@
 - [ ] #6 Optional git commit of the brain after `synapse_commit` — history of memory changes
 - [ ] #8 Edit notes in the GUI — today notes are read-only there
 - [ ] #9 Lock down admin if failed 5 times.
-- [ ] #10 version should come from the file, not .env.nas
 - [ ] #11 record in claude.ai instructions on how to use cortex vs preferences or claude's memory.
 
 ---
@@ -15,3 +14,4 @@
 ## Done
 - [x] #4 Recreate the local `.venv` on Python 3.14 after the PATH fix and a VS Code restart (README › Run it locally) — the old uv-made environment was locked by VS Code — completed 2026-09-26 · VERSION 0.1.0
 - [x] #7 A "check the brain" audit tool over MCP — the brain's audit runs only where its script exists — completed 2026-09-27 · VERSION 0.2.0
+- [x] #10 version should come from the file, not .env.nas — completed 2026-09-28 · VERSION 0.2.3

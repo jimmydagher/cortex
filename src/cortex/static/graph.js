@@ -1,31 +1,58 @@
 /* Force-directed brain graph on a canvas. No dependencies.
    Forces follow d3-force's defaults: many-body repulsion, link springs weighted
-   by degree, and a weak pull to the center so orphans stay in view. */
+   by degree, and a weak pull to the center so orphans stay in view. Filters,
+   display and forces are tunable like Obsidian's graph view (GRAPH_DEFAULTS). */
 "use strict";
 
-const CHARGE = -110;
 const MAX_REPULSION_DISTANCE_SQUARED = 600 * 600;
-const LINK_DISTANCE = 70;
-const CENTER_PULL = 0.035;
 const VELOCITY_KEEP = 0.6;
 const ALPHA_DECAY = 0.0228;
 const ALPHA_MIN = 0.004;
 const GOLDEN_ANGLE = 2.399963;
+const HUB_DEGREE = 6;
+
+const GRAPH_DEFAULTS = Object.freeze({
+  // Filters: which notes are drawn.
+  search: "",
+  orphans: true,
+  local: false,
+  depth: 1,
+  hiddenColors: [],
+  // Display.
+  nodeSize: 0.6,
+  linkWidth: 1,
+  linkOpacity: 0.8,
+  arrows: false,
+  labels: false,
+  textFade: 1.6,
+  highlight: true,
+  // Forces.
+  center: 0.035,
+  repel: 110,
+  linkStrength: 1,
+  linkDistance: 70,
+});
+const FILTER_KEYS = ["search", "orphans", "local", "depth", "hiddenColors"];
+const FORCE_KEYS = ["center", "repel", "linkStrength", "linkDistance"];
 
 class BrainGraph {
-  constructor(canvas, { onSelect } = {}) {
+  constructor(canvas, { onSelect, settings } = {}) {
     this.canvas = canvas;
     this.context = canvas.getContext("2d");
     this.onSelect = onSelect || (() => {});
+    this.settings = { ...GRAPH_DEFAULTS, ...settings };
     this.nodes = [];
     this.links = [];
+    this.visibleNodes = [];
+    this.visibleLinks = [];
+    this.visibleIds = new Set();
+    this.insetRight = 0;
     this.byId = new Map();
     this.neighbors = new Map();
     this.view = { x: 0, y: 0, scale: 1 };
     this.alpha = 0;
     this.hover = null;
     this.selected = null;
-    this.showLabels = false;
     this.dragNode = null;
     this.panning = null;
     this.moved = false;
@@ -64,11 +91,69 @@ class BrainGraph {
       this.neighbors.get(link.source.id).add(link.target.id);
       this.neighbors.get(link.target.id).add(link.source.id);
     }
-    for (const node of this.nodes) node.radius = 4 + Math.sqrt(node.degree) * 2.2;
+    this._sizeNodes();
+    this._refilter();
     this.readColors();
     const fresh = previous.size === 0;
     this.reheat(fresh ? 1 : 0.3);
     if (fresh) this._fitWhenSettled = true;
+  }
+
+  /* Change any settings (a partial object); refilters, reheats or redraws as needed. */
+  setSettings(changes) {
+    const changed = Object.keys(changes).filter((key) => JSON.stringify(changes[key]) !== JSON.stringify(this.settings[key]));
+    if (!changed.length) return;
+    this.settings = { ...this.settings, ...changes };
+    if (changed.includes("nodeSize")) this._sizeNodes();
+    if (changed.some((key) => FILTER_KEYS.includes(key))) {
+      this._refilter();
+      this.reheat(0.3);
+      this._fitWhenSettled = true;
+    } else if (changed.some((key) => FORCE_KEYS.includes(key))) {
+      this.reheat(0.5);
+    }
+    this.draw();
+  }
+
+  _sizeNodes() {
+    for (const node of this.nodes) node.radius = (4 + Math.sqrt(node.degree) * 2.2) * this.settings.nodeSize;
+  }
+
+  /* Recompute which notes and links are drawn and simulated. */
+  _refilter() {
+    const settings = this.settings;
+    let visible = this.nodes;
+    const query = settings.search.trim().toLowerCase();
+    if (query) {
+      const tag = query.replace(/^#/, "");
+      visible = visible.filter((node) => node.id.toLowerCase().includes(query) || node.label.toLowerCase().includes(query)
+        || (node.tags || []).some((nodeTag) => nodeTag.toLowerCase().includes(tag)));
+    }
+    if (settings.hiddenColors.length) {
+      const hidden = new Set(settings.hiddenColors);
+      visible = visible.filter((node) => !hidden.has(node.color || ""));
+    }
+    if (settings.local && this.selected && this.byId.has(this.selected)) {
+      const reach = new Set([this.selected]);
+      let frontier = [this.selected];
+      for (let level = 0; level < settings.depth; level++) {
+        const next = [];
+        for (const id of frontier) for (const other of this.neighbors.get(id)) if (!reach.has(other)) { reach.add(other); next.push(other); }
+        frontier = next;
+      }
+      visible = visible.filter((node) => reach.has(node.id));
+    }
+    let ids = new Set(visible.map((node) => node.id));
+    let links = this.links.filter((link) => ids.has(link.source.id) && ids.has(link.target.id));
+    if (!settings.orphans) {
+      const linked = new Set(links.flatMap((link) => [link.source.id, link.target.id]));
+      visible = visible.filter((node) => linked.has(node.id) || node.id === this.selected);
+      ids = new Set(visible.map((node) => node.id));
+      links = links.filter((link) => ids.has(link.source.id) && ids.has(link.target.id));
+    }
+    this.visibleNodes = visible;
+    this.visibleLinks = links;
+    this.visibleIds = ids;
   }
 
   reheat(alpha = 0.5) {
@@ -95,7 +180,8 @@ class BrainGraph {
   }
 
   _tick() {
-    const nodes = this.nodes, alpha = this.alpha, count = nodes.length;
+    const nodes = this.visibleNodes, alpha = this.alpha, count = nodes.length;
+    const { repel, linkStrength, linkDistance, center } = this.settings;
     for (let i = 0; i < count; i++) {
       const first = nodes[i];
       for (let j = i + 1; j < count; j++) {
@@ -104,25 +190,25 @@ class BrainGraph {
         let distanceSquared = dx * dx + dy * dy;
         if (distanceSquared > MAX_REPULSION_DISTANCE_SQUARED) continue;
         if (distanceSquared < 1) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; distanceSquared = 1; }
-        const force = (CHARGE * alpha) / distanceSquared;
+        const force = (-repel * alpha) / distanceSquared;
         first.vx += dx * force; first.vy += dy * force;
         second.vx -= dx * force; second.vy -= dy * force;
       }
     }
-    for (const link of this.links) {
+    for (const link of this.visibleLinks) {
       const source = link.source, target = link.target;
       let dx = target.x + target.vx - source.x - source.vx, dy = target.y + target.vy - source.y - source.vy;
       const distance = Math.sqrt(dx * dx + dy * dy) || 1;
-      const strength = 1 / Math.min(source.degree, target.degree);
-      const pull = ((distance - LINK_DISTANCE) / distance) * alpha * strength;
+      const strength = Math.min(1, linkStrength / Math.min(source.degree, target.degree));
+      const pull = ((distance - linkDistance) / distance) * alpha * strength;
       dx *= pull; dy *= pull;
       const bias = source.degree / (source.degree + target.degree);
       target.vx -= dx * bias; target.vy -= dy * bias;
       source.vx += dx * (1 - bias); source.vy += dy * (1 - bias);
     }
     for (const node of nodes) {
-      node.vx -= node.x * CENTER_PULL * alpha;
-      node.vy -= node.y * CENTER_PULL * alpha;
+      node.vx -= node.x * center * alpha;
+      node.vy -= node.y * center * alpha;
       if (node === this.dragNode) { node.vx = node.vy = 0; continue; }
       node.vx *= VELOCITY_KEEP; node.vy *= VELOCITY_KEEP;
       node.x += node.vx; node.y += node.vy;
@@ -143,33 +229,47 @@ class BrainGraph {
   }
 
   fit(padding = 60) {
-    if (!this.nodes.length || !this.width) return;
+    if (!this.visibleNodes.length || !this.width) return;
     let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
-    for (const node of this.nodes) {
+    for (const node of this.visibleNodes) {
       left = Math.min(left, node.x); top = Math.min(top, node.y);
       right = Math.max(right, node.x); bottom = Math.max(bottom, node.y);
     }
-    const scale = Math.min((this.width - padding * 2) / (right - left || 1), (this.height - padding * 2) / (bottom - top || 1), 2.5);
-    this.view = { scale, x: this.width / 2 - ((left + right) / 2) * scale, y: this.height / 2 - ((top + bottom) / 2) * scale };
+    const width = Math.max(this.width - this.insetRight, this.width / 2); // leave room for an open options panel
+    const scale = Math.min((width - padding * 2) / (right - left || 1), (this.height - padding * 2) / (bottom - top || 1), 2.5);
+    this.view = { scale, x: width / 2 - ((left + right) / 2) * scale, y: this.height / 2 - ((top + bottom) / 2) * scale };
     this.draw();
+  }
+
+  /* Screen pixels on the right covered by an overlay; fit() centers notes in the rest. */
+  setInsetRight(pixels) {
+    this.insetRight = pixels;
+    this.fit();
   }
 
   focus(id) {
     const node = this.byId.get(id);
     if (!node) return;
-    this.selected = id;
+    this.select(id);
+    if (this.settings.local) return; // the local graph refits around the new note
     const scale = Math.max(this.view.scale, 1.4);
     this.view = { scale, x: this.width / 2 - node.x * scale, y: this.height / 2 - node.y * scale };
     this.draw();
   }
 
   select(id) {
+    const changed = id !== this.selected;
     this.selected = id;
+    if (changed && (this.settings.local || !this.settings.orphans)) {
+      this._refilter();
+      this.reheat(0.4);
+      if (this.settings.local) this._fitWhenSettled = true;
+    }
     this.draw();
   }
 
   draw() {
-    const { context, view, pixelRatio } = this;
+    const { context, view, pixelRatio, settings } = this;
     if (!this.width) return;
     context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     context.clearRect(0, 0, this.width, this.height);
@@ -178,21 +278,23 @@ class BrainGraph {
     context.scale(view.scale, view.scale);
 
     const focusId = this.hover || this.selected;
-    const near = focusId ? this.neighbors.get(focusId) || new Set() : null;
+    const near = settings.highlight && focusId && this.visibleIds.has(focusId) ? this.neighbors.get(focusId) || new Set() : null;
     const lit = (id) => !near || id === focusId || near.has(id);
 
-    for (const link of this.links) {
+    for (const link of this.visibleLinks) {
       const active = near && (link.source.id === focusId || link.target.id === focusId);
       context.strokeStyle = active ? this.colors.accent : this.colors.link;
-      context.globalAlpha = near && !active ? 0.25 : 1;
-      context.lineWidth = (active ? 1.8 : 1) / view.scale;
+      context.fillStyle = context.strokeStyle;
+      context.globalAlpha = active ? 1 : settings.linkOpacity * (near ? 0.25 : 1);
+      context.lineWidth = ((active ? 1.8 : 1) * settings.linkWidth) / view.scale;
       context.beginPath();
       context.moveTo(link.source.x, link.source.y);
       context.lineTo(link.target.x, link.target.y);
       context.stroke();
+      if (settings.arrows) this._arrow(link, (active ? 1.8 : 1) * settings.linkWidth);
     }
 
-    for (const node of this.nodes) {
+    for (const node of this.visibleNodes) {
       context.globalAlpha = lit(node.id) ? 1 : 0.2;
       context.fillStyle = node.color || this.colors.node;
       context.beginPath();
@@ -211,14 +313,32 @@ class BrainGraph {
     context.textAlign = "center";
     context.textBaseline = "top";
     context.fillStyle = this.colors.label;
-    for (const node of this.nodes) {
-      const show = this.showLabels || view.scale > 1.6 || node.id === focusId || (near && near.has(node.id)) || node.degree >= 6;
+    for (const node of this.visibleNodes) {
+      const show = settings.labels || view.scale > settings.textFade || node.id === focusId || (near && near.has(node.id))
+        || (node.degree >= HUB_DEGREE && view.scale > settings.textFade / 2);
       if (!show) continue;
       context.globalAlpha = lit(node.id) ? 0.95 : 0.15;
       context.fillText(node.label, node.x, node.y + node.radius + 3 / view.scale);
     }
     context.restore();
     context.globalAlpha = 1;
+  }
+
+  /* An arrowhead where a link meets its target note. */
+  _arrow(link, width) {
+    const { context, view } = this;
+    const dx = link.target.x - link.source.x, dy = link.target.y - link.source.y;
+    const length = Math.hypot(dx, dy);
+    if (length < link.target.radius * 2) return;
+    const ux = dx / length, uy = dy / length;
+    const tipX = link.target.x - ux * link.target.radius, tipY = link.target.y - uy * link.target.radius;
+    const size = (4 + width * 1.5) / view.scale;
+    context.beginPath();
+    context.moveTo(tipX, tipY);
+    context.lineTo(tipX - ux * size * 1.6 - uy * size * 0.7, tipY - uy * size * 1.6 + ux * size * 0.7);
+    context.lineTo(tipX - ux * size * 1.6 + uy * size * 0.7, tipY - uy * size * 1.6 - ux * size * 0.7);
+    context.closePath();
+    context.fill();
   }
 
   _toWorld(event) {
@@ -229,7 +349,7 @@ class BrainGraph {
 
   _hit(point) {
     let best = null, bestDistance = Infinity;
-    for (const node of this.nodes) {
+    for (const node of this.visibleNodes) {
       const distance = Math.hypot(node.x - point.x, node.y - point.y);
       if (distance < node.radius + 4 / this.view.scale && distance < bestDistance) { best = node; bestDistance = distance; }
     }
@@ -306,3 +426,4 @@ class BrainGraph {
 }
 
 window.BrainGraph = BrainGraph;
+window.GRAPH_DEFAULTS = GRAPH_DEFAULTS;

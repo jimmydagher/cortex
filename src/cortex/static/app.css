@@ -151,7 +151,24 @@ button.stat { text-align: left; }
 .toggle input { width: auto; }
 .legend { position: absolute; left: 12px; bottom: 12px; display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; max-width: calc(100% - 24px); }
 .legend:empty { display: none; }
-.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend button { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.legend button:hover { color: var(--text); }
+.legend button.off { opacity: 0.4; text-decoration: line-through; }
+.graph-toolbar button.active { border-color: var(--accent); color: var(--accent); }
+.graph-options {
+  position: absolute; top: 52px; right: 12px; width: 260px; max-height: calc(100% - 64px); overflow: auto;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 6px 12px 12px; font-size: 12px; z-index: 2;
+}
+.graph-options details { border-bottom: 1px solid var(--border); padding: 6px 0; }
+.graph-options summary { cursor: pointer; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; font-size: 11px; padding: 4px 0; }
+.graph-options .option { display: grid; gap: 4px; margin: 8px 0; font-weight: 400; }
+.graph-options .option.check { grid-template-columns: auto 1fr; align-items: center; gap: 8px; }
+.graph-options .option input { width: 100%; }
+.graph-options .option.check input { width: auto; }
+.graph-options input[type="range"] { padding: 0; accent-color: var(--accent); }
+.graph-options input:disabled { opacity: 0.4; }
+.graph-options output { float: right; font-family: var(--mono); color: var(--muted); }
+.graph-options .option-actions { padding-top: 10px; }
 .legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 
 .note-panel { width: min(460px, 42vw); border-left: 1px solid var(--border); background: var(--surface); overflow: auto; }

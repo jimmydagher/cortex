@@ -1,6 +1,6 @@
 # Set up Cortex on a NAS
 
-From nothing to a running Cortex that Claude can reach, driven entirely from your PC. The process mirrors flammeau's: the `synology` Docker context runs everything on the NAS over SSH, so nothing is copied up by hand. The difference is that Cortex isn't built on the NAS; it pulls the image CI built for the version.
+From nothing to a running Cortex that Claude can reach, driven entirely from your PC. The process mirrors flammeau's and life-dashboard's: the `synology` Docker context runs everything on the NAS over SSH, so nothing is copied up by hand, and the NAS builds the image from your working copy. There's no registry and no CI step.
 
 ## 1. Before you start
 
@@ -12,7 +12,6 @@ From nothing to a running Cortex that Claude can reach, driven entirely from you
   ```
 
 - PowerShell 7 (`pwsh`), which the scripts need.
-- The image published for the version you deploy: CI pushes `ghcr.io/jimmydagher/cortex:<VERSION>` when a release lands on `main` ([deployment.md](deployment.md)). It's public, so the NAS pulls it without logging in.
 
 ## 2. `.env.nas`, the one-time local file
 
@@ -34,7 +33,7 @@ To serve a vault that already lives elsewhere on the NAS (for example one Obsidi
 
 Every run does the same safe steps, in order:
 
-1. **Pulls** `ghcr.io/jimmydagher/cortex:<VERSION>` on the NAS (`-Version` picks another tag).
+1. **Builds** the image `cortex:<VERSION>` on the NAS from your working copy (a few minutes on the NAS's hardware; `-Version` skips the build and runs an image an earlier deploy built, for rollback).
 2. **Creates the NAS folders** from `.env.nas` and gives Cortex's own (state, config, logs, secrets) to `PUID:PGID`. An existing brain folder's ownership is left alone.
 3. **Uploads the config override.** The first run creates `config/override/nas.local.yaml` (gitignored) from the `nas.yaml` template, with the NAS's address as `server.allowed_hosts`. Edit it later for more host names or HTTPS; every deploy uploads it as the NAS's `/config/nas.yaml`.
 4. **Writes missing secrets** on the NAS. The first run asks for the GUI admin password (twice) and generates the session key. With `-SetGuestPassword` it also asks for a guest password (see [Guest account](#guest-account-optional)). Values go to the NAS over the SSH-tunneled Docker connection and are never saved on your PC. A run that changes a secret recreates the container so Cortex picks it up.
@@ -72,6 +71,7 @@ The script is these steps plus the folder, config and secret setup. From the rep
 ```powershell
 # dev machine, PowerShell, repo root
 $env:CORTEX_VERSION = Get-Content VERSION
+docker --context synology compose --env-file .env.nas build
 docker --context synology compose --env-file .env.nas run --rm --no-deps cortex validate-config
 docker --context synology compose --env-file .env.nas up -d
 docker --context synology compose --env-file .env.nas logs -f cortex

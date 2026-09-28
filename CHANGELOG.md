@@ -16,7 +16,23 @@ All notable changes, newest first. See `VERSION` for the current release.
 ### Bug/Issues/Fixes
 (none)
 
-## 🆕VERSION 0.2.2 📅 2026-09-27
+## 🆕VERSION 0.2.3 📅 2026-09-28
+
+### Added or New Features
+- Graph options, like Obsidian's graph settings: an **Options** panel on the Brain tab with filters (search, show orphans, local graph around the selected note with a depth), display settings (node size, link thickness and opacity, arrows, labels, the zoom at which labels appear, dimming on hover) and forces (center, repel, link force, link distance), plus Reset. Legend entries now show or hide their color group. Settings are remembered in the browser.
+
+### Removed
+(none)
+
+### Changed
+- Deploying works like flammeau and life-dashboard: `deploy-nas.ps1` builds the image on the NAS from your working copy, with no GitHub Actions image and no GHCR pull. The image tag comes from the `VERSION` file (TODO #10). `-Version` now rolls back to an image an earlier deploy built on the NAS. Operator: remove `CORTEX_VERSION` from `.env.nas`; it's no longer read.
+- Graph nodes are smaller by default. The **Labels** checkbox moved into the Options panel as "Always show labels".
+- The sign-in screen asks for "your passcode" instead of "Admin password", since guests sign in there too, and shows the running version.
+
+### Bug/Issues/Fixes
+- The note reader no longer shows a stray "null" next to the tags of notes that aren't protected.
+
+## 🟩VERSION 0.2.2 📅 2026-09-27
 
 ### Added or New Features
 - Optional read-only guest account for the GUI. A guest signs in with their own password and can browse the graph, notes, SYNAPSE and activity, but can't change anything or see API keys, settings or setup. Operator: `deploy-nas.ps1 -SetGuestPassword` creates it (the `cortex-guest-pwd` secret, which must differ from the admin password); `-RemoveGuest` deletes it.

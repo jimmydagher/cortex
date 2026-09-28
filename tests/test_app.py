@@ -208,7 +208,7 @@ def test_guest_can_read_but_not_change(config: Config, logger: Logger, errors: E
     with build(config, logger, errors) as client:
         login_response = client.post("/api/login", json={"password": GUEST_PASSWORD})
         assert login_response.status_code == 200 and login_response.json()["role"] == "guest"
-        assert client.get("/api/session").json() == {"authenticated": True, "role": "guest"}
+        assert client.get("/api/session").json() == {"authenticated": True, "role": "guest", "version": config.runtime.version}
         for path in ("/api/status", "/api/graph", "/api/note?path=CORTEX.md", "/api/synapse", "/api/activity"):
             assert client.get(path).status_code == 200, path
         for path in ("/api/keys", "/api/setup", "/api/setup/job"):
@@ -247,9 +247,11 @@ def test_guest_password_must_differ_from_admin(config: Config, logger: Logger, e
         create_app(config, logger, Secrets(config.secrets), errors)
 
 
-def test_no_guest_account_by_default(client: TestClient) -> None:
+def test_no_guest_account_by_default(client: TestClient, config: Config) -> None:
+    # The sign-in screen shows the running version, so the session answers with it before login too.
+    assert client.get("/api/session").json() == {"authenticated": False, "role": None, "version": config.runtime.version}
     login(client)
-    assert client.get("/api/session").json() == {"authenticated": True, "role": "admin"}
+    assert client.get("/api/session").json() == {"authenticated": True, "role": "admin", "version": config.runtime.version}
 
 
 def test_login_lockout(client: TestClient) -> None:

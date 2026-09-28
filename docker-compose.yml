@@ -1,7 +1,8 @@
 # Cortex on the NAS, driven from your PC through the `synology` Docker context:
-#   .\scripts\ps1\deploy-nas.ps1            folders, config, secrets, pre-flight, pull, start, health check
-# By hand, from the repo root:
-#   docker --context synology compose --env-file .env.nas up -d
+#   .\scripts\ps1\deploy-nas.ps1            build on the NAS, folders, config, secrets, pre-flight, start, health check
+# By hand, from the repo root (PowerShell; the image is tagged with the VERSION file):
+#   $env:CORTEX_VERSION = Get-Content VERSION
+#   docker --context synology compose --env-file .env.nas up -d --build
 #   docker --context synology compose --env-file .env.nas logs -f cortex
 # Setup from nothing: docs/setup-nas.md. Shipping a new version: docs/deployment.md.
 #
@@ -10,8 +11,11 @@
 # read on this PC from .env.nas (gitignored; see .env.nas.example).
 services:
   cortex:
-    # The exact image CI built and tested for that VERSION (never rebuilt on the NAS).
-    image: ghcr.io/jimmydagher/cortex:${CORTEX_VERSION:?set CORTEX_VERSION in .env.nas, e.g. 0.1.0}
+    # Built on the NAS from this working copy (Compose sends the build context over the
+    # remote Docker API), like flammeau and life-dashboard. Each version keeps its own tag
+    # there, so deploy-nas.ps1 -Version can roll back without rebuilding.
+    build: .
+    image: cortex:${CORTEX_VERSION:?set by deploy-nas.ps1 from the VERSION file}
     container_name: cortex
     restart: unless-stopped
     # The user that owns the folders below; deploy-nas.ps1 sets their owner to this.

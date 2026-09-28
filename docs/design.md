@@ -27,7 +27,8 @@ In the owner's words (2026-09-26):
 - 2026-09-26: Config is `config/default.yaml` + `override/<env>.yaml`, validated at startup; runtime state (API key hashes, power switch, setup paths) is data in `/data/cortex/state.json` (owner's choice).
 - 2026-09-26: Secrets are Docker secrets files (`cortex-admin-pwd`, `cortex-session-key`); the environment fallback is for local development only.
 - 2026-09-27: An optional read-only guest account for the GUI: a second password (`cortex-guest-pwd`) and a role in the signed session cookie, with each role's cookies signed by a key derived from its own password. The server enforces it on every write and admin-only read. Guests get no MCP access; clients keep per-client API keys.
-- 2026-09-26: CI builds the image once per VERSION and pushes it to GHCR; the NAS pulls that tag (owner's choice).
+- 2026-09-26: CI builds the image once per VERSION and pushes it to GHCR; the NAS pulls that tag (owner's choice). Superseded 2026-09-27.
+- 2026-09-27: The NAS builds the image itself, from the working copy through the `synology` Docker context, like flammeau and life-dashboard; no registry, and CI only runs checks (owner's choice). Each version stays tagged on the NAS for rollback.
 - 2026-09-26: The brain gained a personal layer (CEREBELLUM) and untracked in-transit files. Cortex follows it: the personal map loads with CORTEX, CEREBELLUM is protected, missing SYNAPSE/ENGRAM come from the brain's guide, headings rename with their links, and "check the brain" runs the brain's own script (the human's file; Cortex never writes `.py`).
 
 ## Out of scope for now

@@ -84,6 +84,7 @@ function when(iso) {
 
 async function boot() {
   const session = await api("/api/session");
+  byId("login-version").textContent = `v${session.version}`;
   if (!session.authenticated) return show("login");
   state.role = session.role;
   // The server refuses guests every change; this only hides the controls they can't use.
@@ -165,12 +166,9 @@ async function loadBrain() {
   const [graph] = await Promise.all([api("/api/graph"), refreshStatus()]);
   state.graph = graph;
   if (!state.graphView) {
-    state.graphView = new BrainGraph(byId("graph"), { onSelect: openNote });
+    state.graphView = new BrainGraph(byId("graph"), { onSelect: openNote, settings: loadGraphSettings() });
     byId("graph-fit").addEventListener("click", () => state.graphView.fit());
-    byId("graph-labels").addEventListener("change", (event) => {
-      state.graphView.showLabels = event.target.checked;
-      state.graphView.draw();
-    });
+    buildGraphOptions();
   }
   requestAnimationFrame(() => {
     state.graphView.resize();
@@ -210,14 +208,118 @@ function showDead(dead) {
   byId("note-in").replaceChildren();
 }
 
+/* Legend entries toggle their color group on and off; "other" is notes in no group. */
 function renderLegend(groups) {
+  const entries = groups.map((group) => ({ color: group.color, name: group.kind === "tag" ? `#${group.value}` : group.value }));
+  if (entries.length && state.graph.nodes.some((node) => !node.color)) entries.push({ color: "", name: "other" });
+  const hidden = new Set(state.graphView.settings.hiddenColors);
   byId("legend").replaceChildren(
-    ...groups.map((group) => {
+    ...entries.map((entry) => {
       const dot = element("i");
-      dot.style.background = group.color;
-      return element("span", {}, dot, group.kind === "tag" ? `#${group.value}` : group.value);
+      dot.style.background = entry.color || "var(--node)";
+      const button = element("button", { type: "button", class: hidden.has(entry.color) ? "off" : null, title: "Show or hide these notes" }, dot, entry.name);
+      button.addEventListener("click", () => {
+        const now = new Set(state.graphView.settings.hiddenColors);
+        if (now.has(entry.color)) now.delete(entry.color); else now.add(entry.color);
+        button.classList.toggle("off", now.has(entry.color));
+        changeGraph({ hiddenColors: [...now] });
+      });
+      return button;
     }),
   );
+}
+
+/* ---------- graph options (like Obsidian's graph settings) ---------- */
+
+const GRAPH_SETTINGS_KEY = "cortex.graph";
+const GRAPH_OPTIONS = [
+  { section: "Filters", controls: [
+    { key: "search", label: "Search", type: "text", placeholder: "path, name or #tag" },
+    { key: "orphans", label: "Show orphans", type: "check" },
+    { key: "local", label: "Local graph (selected note only)", type: "check" },
+    { key: "depth", label: "Local depth", type: "range", min: 1, max: 4, step: 1 },
+  ] },
+  { section: "Display", controls: [
+    { key: "nodeSize", label: "Node size", type: "range", min: 0.2, max: 2, step: 0.05 },
+    { key: "linkWidth", label: "Link thickness", type: "range", min: 0.2, max: 4, step: 0.1 },
+    { key: "linkOpacity", label: "Link opacity", type: "range", min: 0.05, max: 1, step: 0.05 },
+    { key: "arrows", label: "Arrows", type: "check" },
+    { key: "labels", label: "Always show labels", type: "check" },
+    { key: "textFade", label: "Labels appear at zoom", type: "range", min: 0.3, max: 4, step: 0.1 },
+    { key: "highlight", label: "Dim unrelated notes on hover", type: "check" },
+  ] },
+  { section: "Forces", controls: [
+    { key: "center", label: "Center force", type: "range", min: 0, max: 0.2, step: 0.005 },
+    { key: "repel", label: "Repel force", type: "range", min: 0, max: 600, step: 10 },
+    { key: "linkStrength", label: "Link force", type: "range", min: 0, max: 2, step: 0.05 },
+    { key: "linkDistance", label: "Link distance", type: "range", min: 10, max: 300, step: 5 },
+  ] },
+];
+
+// Per-browser convenience only: storage may be blocked, so every access is guarded.
+function loadGraphSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(GRAPH_SETTINGS_KEY) || "{}");
+    return Object.fromEntries(Object.entries(saved).filter(([key, value]) => key in GRAPH_DEFAULTS && typeof value === typeof GRAPH_DEFAULTS[key]));
+  } catch {
+    return {};
+  }
+}
+
+function changeGraph(changes) {
+  state.graphView.setSettings(changes);
+  try {
+    localStorage.setItem(GRAPH_SETTINGS_KEY, JSON.stringify(state.graphView.settings));
+  } catch {
+    /* not remembered; the graph still changes */
+  }
+}
+
+function buildGraphOptions() {
+  const panel = byId("graph-options");
+  const toggle = byId("graph-options-toggle");
+  const inputs = {};
+  const shown = (control, value) => control.type === "range" ? String(Number(value.toFixed(3))) : "";
+  const sync = () => {
+    const settings = state.graphView.settings;
+    for (const [key, { control, input, output }] of Object.entries(inputs)) {
+      if (control.type === "check") input.checked = settings[key]; else input.value = settings[key];
+      if (output) output.textContent = shown(control, settings[key]);
+    }
+    inputs.depth.input.disabled = !settings.local;
+  };
+  const sections = GRAPH_OPTIONS.map(({ section, controls }) => element("details", { open: "" },
+    element("summary", {}, section),
+    ...controls.map((control) => {
+      const input = element("input", control.type === "check" ? { type: "checkbox" }
+        : control.type === "text" ? { type: "search", placeholder: control.placeholder }
+        : { type: "range", min: control.min, max: control.max, step: control.step });
+      const output = control.type === "range" ? element("output") : null;
+      inputs[control.key] = { control, input, output };
+      input.addEventListener("input", () => {
+        const value = control.type === "check" ? input.checked : control.type === "range" ? Number(input.value) : input.value;
+        changeGraph({ [control.key]: value });
+        sync();
+      });
+      return element("label", { class: `option ${control.type}` },
+        control.type === "check" ? input : null,
+        element("span", {}, control.label, output ? " " : null, output),
+        control.type === "check" ? null : input);
+    }),
+  ));
+  const reset = element("button", { type: "button", class: "ghost small", onclick: () => {
+    changeGraph({ ...GRAPH_DEFAULTS });
+    sync();
+    renderLegend(state.graph.groups);
+  } }, "Reset to defaults");
+  panel.replaceChildren(...sections, element("div", { class: "option-actions" }, reset));
+  sync();
+  toggle.addEventListener("click", () => {
+    panel.hidden = !panel.hidden;
+    toggle.setAttribute("aria-expanded", String(!panel.hidden));
+    toggle.classList.toggle("active", !panel.hidden);
+    state.graphView.setInsetRight(panel.hidden ? 0 : panel.offsetWidth + 24);
+  });
 }
 
 async function openNote(path) {
@@ -229,7 +331,7 @@ async function openNote(path) {
     byId("note-path").textContent = note.path;
     byId("note-tags").replaceChildren(
       ...note.tags.map((tag) => element("span", { class: "chip" }, `#${tag}`)),
-      note.protected ? element("span", { class: "chip lock", title: "Changes only through an approved SYNAPSE commit" }, "protected") : null,
+      ...(note.protected ? [element("span", { class: "chip lock", title: "Changes only through an approved SYNAPSE commit" }, "protected")] : []),
     );
     const body = byId("note-body");
     body.innerHTML = note.html; // server-rendered, raw HTML disabled

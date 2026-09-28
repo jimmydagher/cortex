@@ -530,7 +530,8 @@ def create_app(config: Config, logger: Logger, secret_store: Secrets, errors: Er
 
     async def session(request: Request) -> Response:
         role = sessions.role(request.cookies.get(COOKIE))
-        return JSONResponse({"authenticated": role is not None, "role": role.value if role else None})
+        return JSONResponse({"authenticated": role is not None, "role": role.value if role else None,
+                             "version": config.runtime.version})  # shown on the sign-in screen
 
     # ----- reads -----
 
