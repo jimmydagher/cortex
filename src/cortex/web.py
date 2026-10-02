@@ -457,7 +457,11 @@ def render_note(brain: Brain, relative: str, text: str) -> str:
 
 
 def _task_lists(state: StateCore) -> None:
-    """Turn `- [ ] item` / `- [x] item` into read-only checkboxes (a markdown-it core rule)."""
+    """Turn `- [ ] item` / `- [x] item` into read-only checkboxes (a markdown-it core rule).
+
+    Uses Obsidian's markup (`contains-task-list`, `task-list-item`, `is-checked`, `data-task`)
+    so the reader's checkbox styling matches Obsidian's.
+    """
     tokens = state.tokens
     for index in range(2, len(tokens)):
         inline, item = tokens[index], tokens[index - 2]
@@ -468,14 +472,16 @@ def _task_lists(state: StateCore) -> None:
         if first is None or match is None:
             continue
         first.content = first.content[match.end() :]
+        checked = match.group(1) != " "
         box = Token("html_inline", "", 0)
-        box.content = f'<input type="checkbox" disabled{" checked" if match.group(1) != " " else ""}>'
+        box.content = f'<input type="checkbox" class="task-list-item-checkbox" disabled{" checked" if checked else ""}>'
         inline.children = [box, *(inline.children or [])]
-        item.attrJoin("class", "task")
+        item.attrJoin("class", "task-list-item is-checked" if checked else "task-list-item")
+        item.attrSet("data-task", match.group(1))
         for parent in reversed(tokens[: index - 2]):
             if parent.type in ("bullet_list_open", "ordered_list_open") and parent.level == item.level - 1:
-                if "tasks" not in str(parent.attrGet("class") or ""):
-                    parent.attrJoin("class", "tasks")
+                if "contains-task-list" not in str(parent.attrGet("class") or ""):
+                    parent.attrJoin("class", "contains-task-list")
                 break
 
 

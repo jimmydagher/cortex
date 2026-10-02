@@ -328,9 +328,9 @@ def test_note_rendering_shows_task_lists_as_checkboxes(client: TestClient, brain
     (brain_dir / "TASKS.md").write_text("- [ ] todo\n- [x] done\n- plain\n\n`- [ ] code`\n", encoding="utf-8")
     login(client)
     html = client.get("/api/note", params={"path": "TASKS"}).json()["html"]
-    assert '<ul class="tasks">' in html
-    assert '<li class="task"><input type="checkbox" disabled>todo</li>' in html
-    assert '<li class="task"><input type="checkbox" disabled checked>done</li>' in html
+    assert '<ul class="contains-task-list">' in html
+    assert '<li class="task-list-item" data-task=" "><input type="checkbox" class="task-list-item-checkbox" disabled>todo</li>' in html
+    assert '<li class="task-list-item is-checked" data-task="x"><input type="checkbox" class="task-list-item-checkbox" disabled checked>done</li>' in html
     assert "<li>plain</li>" in html
     assert "<code>- [ ] code</code>" in html
 

@@ -11,12 +11,26 @@ All notable changes, newest first. See `VERSION` for the current release.
 (none)
 
 ### Changed
-- The note reader shows Markdown task lists (`- [ ]`, `- [x]`) as checkboxes, ticked when done, instead of `• [ ]`. (TODO #13)
+(none)
 
 ### Bug/Issues/Fixes
 (none)
 
-## 🆕VERSION 0.2.4 📅 2026-09-28
+## 🆕VERSION 0.2.5 📅 2026-10-01
+
+### Added or New Features
+(none)
+
+### Removed
+(none)
+
+### Changed
+- The note reader shows Markdown task lists (`- [ ]`, `- [x]`) as Obsidian-style checkboxes on the same line as the task, with done items ticked, muted and struck through, instead of `• [ ]`. (TODO #13)
+
+### Bug/Issues/Fixes
+(none)
+
+## 🟪VERSION 0.2.4 📅 2026-09-28
 
 ### Added or New Features
 - Protected paths accept `!` exemptions; project hubs under `PREFRONTAL/PROJECTS/` stay writable inside the protected personal layer.

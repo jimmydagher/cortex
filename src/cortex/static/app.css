@@ -188,9 +188,37 @@ button.stat { text-align: left; }
 .note-body blockquote { margin: 12px 0; padding: 4px 14px; border-left: 3px solid var(--accent); color: var(--muted); }
 .note-body table { border-collapse: collapse; width: 100%; font-size: 13px; display: block; overflow-x: auto; }
 .note-body th, .note-body td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; }
-.note-body .tasks { padding-left: 1.2em; }
-.note-body li.task { list-style: none; }
-.note-body li.task > input[type="checkbox"], .note-body li.task > p > input[type="checkbox"] { accent-color: var(--accent); margin: 0 6px 0 -1.2em; vertical-align: middle; }
+/* Task lists, styled like Obsidian's: a drawn checkbox hanging in the bullet column, done items muted and struck. */
+.note-body .task-list-item { list-style: none; }
+.note-body .task-list-item.is-checked { color: var(--muted); text-decoration: line-through; }
+/* An inline-block stops the line-through reaching sub-items that aren't done. */
+.note-body .task-list-item.is-checked > :is(ul, ol) { display: inline-block; width: 100%; color: var(--text); }
+.note-body .task-list-item-checkbox {
+  appearance: none;
+  position: relative;
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  margin: 0 6px 0 -22px;
+  vertical-align: -2px;
+  background: transparent;
+  border: 1px solid var(--muted);
+  border-radius: 4px;
+  cursor: default;
+}
+.note-body .task-list-item-checkbox:checked { background: var(--accent); border-color: var(--accent); }
+.note-body .task-list-item-checkbox:checked::after {
+  content: "";
+  position: absolute;
+  left: 4.5px;
+  top: 1.5px;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
 .note-body a[href^="#missing="] { color: var(--danger); text-decoration: line-through dotted; }
 .note-links { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 24px; border-top: 1px solid var(--border); padding-top: 14px; }
 .note-links ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
