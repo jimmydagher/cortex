@@ -1,4 +1,4 @@
-# TODO
+# CORTEX
 
 - [ ] #1 Create the GitHub repo jimmydagher/cortex, push `main`, and confirm CI passes and publishes `ghcr.io/jimmydagher/cortex:0.1.0` — the workflow has never run on GitHub
 - [ ] #2 Run the browser tests: `python -m playwright install chromium`, then `python -m pytest tests -m e2e` — written but not yet run
@@ -8,6 +8,8 @@
 - [ ] #8 Edit notes in the GUI — today notes are read-only there
 - [ ] #9 Lock down admin if failed 5 times.
 - [ ] #11 record in claude.ai instructions on how to use cortex vs preferences or claude's memory.
+- [ ] #12 add the ability to have multi-users, creating multiple prefrontal cortexes or within it the different profiles.
+- [ ] #13 in the md review panel the checkboxes are not showing correctly, enhance that feature to show like visual checkboxes currently is should as `• [ ]`
 
 ---
 
