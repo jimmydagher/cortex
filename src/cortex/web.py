@@ -28,6 +28,8 @@ from typing import Any, cast
 from urllib.parse import quote
 
 from markdown_it import MarkdownIt
+from markdown_it.rules_core import StateCore
+from markdown_it.token import Token
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.applications import Starlette
@@ -78,6 +80,7 @@ CSP = (
     "connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
 )
 MARKDOWN = MarkdownIt("commonmark", {"html": False}).enable(["table", "strikethrough"])
+TASK_MARKER = re.compile(r"\[([ xX])\](?: |$)")
 HTTP_ERROR_CODES = {HTTPStatus.NOT_FOUND: ErrorCode.NOT_FOUND, HTTPStatus.METHOD_NOT_ALLOWED: ErrorCode.METHOD_NOT_ALLOWED}
 
 
@@ -451,6 +454,32 @@ def render_note(brain: Brain, relative: str, text: str) -> str:
             line = "".join(parts)
         lines.append(line)
     return str(MARKDOWN.render("\n".join(lines)))
+
+
+def _task_lists(state: StateCore) -> None:
+    """Turn `- [ ] item` / `- [x] item` into read-only checkboxes (a markdown-it core rule)."""
+    tokens = state.tokens
+    for index in range(2, len(tokens)):
+        inline, item = tokens[index], tokens[index - 2]
+        if inline.type != "inline" or tokens[index - 1].type != "paragraph_open" or item.type != "list_item_open":
+            continue
+        first = inline.children[0] if inline.children else None
+        match = TASK_MARKER.match(first.content) if first is not None and first.type == "text" else None
+        if first is None or match is None:
+            continue
+        first.content = first.content[match.end() :]
+        box = Token("html_inline", "", 0)
+        box.content = f'<input type="checkbox" disabled{" checked" if match.group(1) != " " else ""}>'
+        inline.children = [box, *(inline.children or [])]
+        item.attrJoin("class", "task")
+        for parent in reversed(tokens[: index - 2]):
+            if parent.type in ("bullet_list_open", "ordered_list_open") and parent.level == item.level - 1:
+                if "tasks" not in str(parent.attrGet("class") or ""):
+                    parent.attrJoin("class", "tasks")
+                break
+
+
+MARKDOWN.core.ruler.push("task_lists", _task_lists)
 
 
 def _wikilink(brain: Brain, source: str, raw: str) -> str:

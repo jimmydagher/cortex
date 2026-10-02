@@ -9,7 +9,7 @@
 - [ ] #9 Lock down admin if failed 5 times.
 - [ ] #11 record in claude.ai instructions on how to use cortex vs preferences or claude's memory.
 - [ ] #12 add the ability to have multi-users, creating multiple prefrontal cortexes or within it the different profiles.
-- [ ] #13 in the md review panel the checkboxes are not showing correctly, enhance that feature to show like visual checkboxes currently is should as `• [ ]`
+- [x] #13 in the md review panel the checkboxes are not showing correctly, enhance that feature to show like visual checkboxes currently is should as `• [ ]`
 
 ---
 

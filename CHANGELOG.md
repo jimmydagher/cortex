@@ -11,7 +11,7 @@ All notable changes, newest first. See `VERSION` for the current release.
 (none)
 
 ### Changed
-(none)
+- The note reader shows Markdown task lists (`- [ ]`, `- [x]`) as checkboxes, ticked when done, instead of `• [ ]`. (TODO #13)
 
 ### Bug/Issues/Fixes
 (none)

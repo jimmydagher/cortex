@@ -324,6 +324,17 @@ def test_note_rendering_escapes_html_and_links_notes(client: TestClient, brain_d
     assert 'href="javascript' not in html  # left as plain text
 
 
+def test_note_rendering_shows_task_lists_as_checkboxes(client: TestClient, brain_dir: Path) -> None:
+    (brain_dir / "TASKS.md").write_text("- [ ] todo\n- [x] done\n- plain\n\n`- [ ] code`\n", encoding="utf-8")
+    login(client)
+    html = client.get("/api/note", params={"path": "TASKS"}).json()["html"]
+    assert '<ul class="tasks">' in html
+    assert '<li class="task"><input type="checkbox" disabled>todo</li>' in html
+    assert '<li class="task"><input type="checkbox" disabled checked>done</li>' in html
+    assert "<li>plain</li>" in html
+    assert "<code>- [ ] code</code>" in html
+
+
 def test_keys_are_hashed_and_security_headers_set(client: TestClient, config: Config) -> None:
     key = new_key(client)
     listing = client.get("/api/keys").json()["keys"]
